@@ -1,222 +1,142 @@
 # Remedy Bot - Multi-Agent Action Analysis System
 
-A sophisticated multi-agent system that analyzes actions, provides criticism, researches alternatives, and offers guidance for better decision-making.
+# DineOut AI 🍽️🤖
 
-## Architecture
+**Your personal AI-powered assistant for discovering the perfect restaurant.**
 
-The system consists of multiple specialized AI agents:
-
-### Backend Agents
-1. **Critic Agent** - Analyzes actions and identifies potential issues and risks
-2. **Researcher Agent** - Researches better alternatives and best practices
-3. **Guidance Agent** - Provides practical guidance for implementing better actions and dealing with consequences
-4. **Coordinator Agent** - Synthesizes all agent outputs into coherent recommendations
-
-### Storage System
-- **ChromaDB Cloud** - Stores anonymized action analyses for learning and similarity matching
-- Cloud-hosted for scalability and reliability
-- Anonymization ensures privacy while enabling system learning
-
-### Frontend
-- **Flutter Mobile App** - Clean, intuitive interface for action analysis
-- Real-time analysis with detailed breakdowns
-- Expandable cards showing criticism, alternatives, research insights, and guidance
-
-## Features
-
-### Action Analysis
-- Submit action descriptions and situational context
-- Get comprehensive multi-agent analysis
-- View confidence scores and processing time
-
-### Detailed Insights
-- **Criticism**: Areas of concern with severity levels
-- **Alternatives**: Research-backed alternative actions
-- **Research Findings**: Relevant insights from various sources
-- **Consequence Guidance**: Strategies for dealing with potential outcomes
-
-### Privacy & Learning
-- All stored data is anonymized
-- System learns from past analyses
-- Similar situations inform future recommendations
-
-## Setup Instructions
-
-### Backend Setup
-
-1. **Navigate to backend directory:**
-   ```bash
-   cd backend
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment:**
-   - Update `.env` file with your OpenAI API key and ChromaDB Cloud credentials
-   - Your ChromaDB Cloud configuration is already set up:
-     - Tenant: `2f695255-a693-428d-b6e4-bcffbbd35e56`
-     - Database: `SelfHelpReceipes`
-     - API Key: Already configured
-
-4. **Validate configuration:**
-   ```bash
-   python validate_config.py
-   ```
-
-5. **Test ChromaDB connection:**
-   ```bash
-   python test_chroma.py
-   ```
-
-6. **Start the server:**
-   ```bash
-   ./start.sh
-   ```
-
-### Frontend Setup
-
-1. **Navigate to frontend directory:**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install Flutter dependencies:**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Run the app:**
-   ```bash
-   flutter run
-   ```
-
-## API Endpoints
-
-### Main Analysis Endpoint
-```
-POST /analyze-action
-```
-
-**Request Body:**
-```json
-{
-  "action_description": "Description of the action taken or planned",
-  "situation_description": "Context and situation details"
-}
-```
-
-**Response:**
-```json
-{
-  "session_id": "unique-session-id",
-  "criticism": [...],
-  "alternatives": [...],
-  "research_findings": [...],
-  "consequence_guidance": [...],
-  "summary": "Overall recommendation",
-  "confidence_score": 0.85,
-  "processing_time_seconds": 2.5
-}
-```
-
-### Other Endpoints
-- `GET /health` - System health check
-- `GET /analytics/actions` - Anonymized analytics
-- `POST /chat` - Legacy chat endpoint for backwards compatibility
-
-## Technology Stack
-
-### Backend
-- **FastAPI** - High-performance API framework
-- **LangChain** - LLM orchestration and chaining
-- **OpenAI GPT-4** - Primary language model
-- **ChromaDB** - Vector database for storing embeddings
-- **Pydantic** - Data validation and serialization
-
-### Frontend
-- **Flutter** - Cross-platform mobile framework
-- **Dio** - HTTP client for API communication
-- **Material Design** - UI components and theming
-
-## Configuration
-
-### Environment Variables
-
-**Backend (.env):**
-```
-OPENAI_API_KEY=your_openai_api_key
-CHROMA_PERSIST_DIRECTORY=./chroma_db
-HOST=0.0.0.0
-PORT=8000
-```
-
-**Frontend (.env):**
-```
-API_BASE_URL=http://localhost:8000
-```
-
-## Usage Examples
-
-### Example 1: Career Decision
-**Action:** "I decided to quit my job without having another one lined up"
-**Situation:** "I was feeling overwhelmed and stressed at work, my manager was being unreasonable"
-
-**Analysis Includes:**
-- Criticism about financial planning and timing
-- Alternative approaches like job searching while employed
-- Research on career transition best practices
-- Guidance for managing financial stress during unemployment
-
-### Example 2: Relationship Decision
-**Action:** "I broke up with my partner via text message"
-**Situation:** "We've been having issues and I wanted to avoid a confrontation"
-
-**Analysis Includes:**
-- Criticism about communication method and emotional impact
-- Alternatives like in-person conversation or counseling
-- Research on healthy relationship communication
-- Guidance for healing and moving forward constructively
-
-## Multi-Agent Workflow
-
-1. **Input Processing** - User provides action and situation descriptions
-2. **Parallel Analysis** - Critic and Researcher agents work simultaneously
-3. **Guidance Generation** - Guidance agent uses criticism and research results
-4. **Coordination** - Coordinator synthesizes all outputs into coherent response
-5. **Storage** - Anonymized analysis stored for future learning
-6. **Response** - Comprehensive analysis returned to user
-
-## Privacy & Ethics
-
-- All personal information is anonymized before storage
-- No personally identifiable information is retained
-- System focuses on constructive criticism and helpful guidance
-- Designed to support better decision-making, not replace professional advice
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues, feature requests, or questions:
-- Create an issue in the GitHub repository
-- Check the documentation
-- Review existing issues for solutions
+DineOut AI is a full-stack application that leverages a sophisticated multi-agent AI system to provide real-time restaurant recommendations. It features a voice-driven conversational interface built with Flutter and a powerful backend powered by Python, FastAPI, and Google's Gemini & Maps APIs.
 
 ---
 
-**Note:** This system is designed to provide guidance and insights for decision-making. It should not replace professional advice for serious matters involving health, legal issues, or major life decisions.
+## ✨ Features
+
+- **🗣️ Conversational Interface**: Interact with the app using natural voice commands. Just ask for what you're looking for!
+- **📍 Real-Time Search**: Get up-to-the-minute information on restaurants that are currently open in your desired location.
+- **🧠 AI-Powered Summaries**: The AI agent reads through restaurant details to provide you with a quick, insightful summary of its vibe and specialties.
+- **📸 Photo Previews**: See photos of the restaurants directly from Google Maps to get a feel for the atmosphere.
+- **🚀 Cross-Platform**: Built with Flutter for a seamless experience on both Android and iOS devices.
+
+---
+
+## 🛠️ Architecture & Tech Stack
+
+The application is built with a modern, decoupled architecture.
+
+### **Frontend**
+- **Framework**: [Flutter](https://flutter.dev/)
+- **State Management**: `setState` (for simplicity in this version)
+- **HTTP Client**: [Dio](https://pub.dev/packages/dio)
+- **Voice Interaction**: [speech_to_text](https://pub.dev/packages/speech_to_text) & [flutter_tts](https://pub.dev/packages/flutter_tts)
+
+### **Backend**
+- **Framework**: [FastAPI](https://fastapi.tiangolo.com/)
+- **LLM Orchestration**: [LangChain](https://www.langchain.com/)
+- **Language Model (LLM)**: [Google Gemini Pro](https://deepmind.google/technologies/gemini/)
+- **External APIs**: [Google Maps Platform (Places API)](https://developers.google.com/maps/documentation/places/web-service)
+- **Server**: [Uvicorn](https://www.uvicorn.org/)
+
+---
+
+## 🚀 Getting Started
+
+Follow these instructions to get the project up and running on your local machine.
+
+### **Prerequisites**
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (version 3.x)
+- [Python](https://www.python.org/downloads/) (version 3.10+) & `pip`
+- [Git](https://git-scm.com/)
+- A **Google API Key** with the "Generative Language API" and "Places API" enabled. You can get this from the [Google Cloud Console](https://console.cloud.google.com/).
+
+### **1. Backend Setup**
+
+First, set up and run the Python backend server.
+
+```bash
+# 1. Navigate to the backend directory
+cd backend
+
+# 2. Create and activate a Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
+# On Windows, use: venv\Scripts\activate
+
+# 3. Install the required dependencies
+pip install -r requirements.txt
+
+# 4. Create a .env file in the `backend` directory
+#    and add your Google API key
+echo "GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY_HERE"" > .env
+
+# 5. Run the FastAPI server
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+The backend server should now be running on `http://0.0.0.0:8000`.
+
+### **2. Frontend Setup**
+
+In a **new terminal**, set up and run the Flutter application.
+
+```bash
+# 1. Find your computer's local IP address.
+#    On macOS/Linux:
+hostname -I | awk '{print $1}'
+#    On Windows:
+ipconfig | findstr "IPv4 Address"
+
+# 2. Navigate to the frontend directory
+cd frontend
+
+# 3. Create a .env file in the `frontend` directory.
+#    Replace <YOUR_COMPUTER_IP> with the IP from the previous step.
+echo "API_URL="http://<YOUR_COMPUTER_IP>:8000"" > .env
+#    Example: echo "API_URL="http://192.168.1.10:8000"" > .env
+
+# 4. Get the Flutter dependencies
+flutter pub get
+
+# 5. Run the app (ensure an emulator is running or a device is connected)
+flutter run
+```
+
+---
+
+## 🕹️ Usage
+
+1.  Launch the app and you'll see the landing screen.
+2.  Tap **"Start Searching"**.
+3.  The chat screen will appear, and the AI assistant will greet you.
+4.  Tap the **microphone icon** to start speaking. Ask for restaurants (e.g., "Find me a good sushi place in San Francisco").
+5.  The app will process your request, show you the results, and speak the summary back to you.
+
+---
+
+## 📂 Project Structure
+
+```
+.
+├── ai/                  # (Future use for AI model assets)
+├── backend/             # FastAPI Backend
+│   ├── app/             # Main application package
+│   │   ├── agents/      # Multi-agent AI system
+│   │   ├── models/      # Pydantic data models
+│   │   └── main.py      # FastAPI app entrypoint
+│   ├── requirements.txt # Python dependencies
+│   └── .env.example     # Environment variable template
+│
+├── frontend/            # Flutter Frontend
+│   ├── lib/             # Main Dart source code
+│   │   ├── main.dart    # App entrypoint
+│   │   ├── landing_screen.dart
+│   │   └── chat_screen.dart
+│   ├── pubspec.yaml     # Flutter dependencies
+│   └── .env.example     # Environment variable template
+│
+└── README.md            # You are here!
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
