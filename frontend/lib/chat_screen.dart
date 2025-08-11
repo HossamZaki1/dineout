@@ -165,20 +165,27 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Text('Restaurant Finder AI'),
         elevation: 2,
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              reverse: true,
-              padding: const EdgeInsets.all(8.0),
-              itemCount: _messages.length,
-              itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                reverse: true,
+                padding: const EdgeInsets.all(8.0),
+                itemCount: _messages.length,
+                itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
+              ),
             ),
-          ),
-          if (_isLoading) const LinearProgressIndicator(),
-          const Divider(height: 1.0),
-          _buildTextComposer(),
-        ],
+            if (_isLoading) const LinearProgressIndicator(),
+            const Divider(height: 1.0),
+            Container(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: _buildTextComposer(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -286,13 +293,31 @@ class _ChatScreenState extends State<ChatScreen> {
       data: IconThemeData(color: Theme.of(context).colorScheme.primary),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(25.0),
+        ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
-              child: TextField(
-                controller: _textController,
-                onSubmitted: _handleSubmitted,
-                decoration: const InputDecoration.collapsed(hintText: "Message"),
+              child: Container(
+                constraints: const BoxConstraints(
+                  minHeight: 40.0,
+                  maxHeight: 120.0,
+                ),
+                child: TextField(
+                  controller: _textController,
+                  onSubmitted: _handleSubmitted,
+                  maxLines: null,
+                  minLines: 1,
+                  textInputAction: TextInputAction.newline,
+                  decoration: const InputDecoration(
+                    hintText: "Message",
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+                  ),
+                ),
               ),
             ),
             IconButton(
