@@ -165,27 +165,24 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Text('Restaurant Finder AI'),
         elevation: 2,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                reverse: true,
-                padding: const EdgeInsets.all(8.0),
-                itemCount: _messages.length,
-                itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
-              ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              reverse: true,
+              padding: const EdgeInsets.all(8.0),
+              itemCount: _messages.length,
+              itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
             ),
-            if (_isLoading) const LinearProgressIndicator(),
-            const Divider(height: 1.0),
-            Container(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: _buildTextComposer(),
-            ),
-          ],
-        ),
+          ),
+          if (_isLoading) const LinearProgressIndicator(),
+          const Divider(height: 1.0),
+          // Use SafeArea to ensure content is not hidden by system UI
+          SafeArea(
+            minimum: const EdgeInsets.only(bottom: 8.0),
+            child: _buildTextComposer(),
+          ),
+        ],
       ),
     );
   }
