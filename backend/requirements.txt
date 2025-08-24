@@ -4,9 +4,9 @@ python-dotenv==1.0.0
 langchain>=0.1.0
 langchain-google-genai>=0.0.6
 langchain-core>=0.1.7
-pydantic==2.5.0
+pydantic>=2.8.0
 httpx==0.25.2
 beautifulsoup4==4.12.2
 requests==2.31.0
 python-multipart==0.0.6
-typing-extensions==4.8.0
+typing-extensions==4.12.2

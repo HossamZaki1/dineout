@@ -8,7 +8,7 @@ import 'landing_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   try {
     await dotenv.load(fileName: ".env");
     print("✅ Environment file loaded successfully");
@@ -16,7 +16,7 @@ Future<void> main() async {
     print("⚠️ Could not load .env file: $e");
     print("Using default configuration...");
   }
-  
+
   // Initialize Firebase
   try {
     await Firebase.initializeApp(

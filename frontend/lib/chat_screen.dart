@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:developer' as developer;
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -53,12 +56,41 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _speechEnabled = false;
   bool _isListening = false;
 
+  // Get the correct API URL based on platform
+  String get apiUrl {
+    String baseUrl = dotenv.env['API_URL'] ?? 'http://10.0.2.2:8080';
+
+    if (kIsWeb) {
+      // For web, use localhost
+      return 'http://localhost:8080';
+    } else if (Platform.isAndroid) {
+      // For Android emulator, use 10.0.2.2 to reach host machine
+      return 'http://10.0.2.2:8080';
+    } else if (Platform.isIOS) {
+      // For iOS simulator, localhost works
+      return 'http://localhost:8080';
+    } else {
+      // Fallback to environment variable or default
+      return baseUrl;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _initSpeech();
     _sessionId = const Uuid().v4();
     _addInitialMessage();
+
+    // Debug environment variables and platform-specific URL
+    developer.log('🔧 Environment check:');
+    developer.log('API_URL from .env: ${dotenv.env['API_URL']}');
+    developer.log('Platform-specific API URL: $apiUrl');
+
+    if (kDebugMode) {
+      debugPrint('🌐 Using API URL: $apiUrl');
+      debugPrint('🔍 Platform: ${kIsWeb ? 'Web' : Platform.operatingSystem}');
+    }
   }
 
   void _initSpeech() async {
@@ -125,8 +157,20 @@ class _ChatScreenState extends State<ChatScreen> {
           .reversed
           .toList();
 
+      // Multiple debug output methods to ensure visibility in Android Studio
+      developer.log('🚀 Sending API request to: $apiUrl/chat');
+      print('📤 Request data: ${{
+        'user_input': text,
+        'session_id': _sessionId,
+        'history': history,
+      }}');
+
+      if (kDebugMode) {
+        debugPrint('🔍 Debug: Making API call with user input: $text');
+      }
+
       final response = await _dio.post(
-        '${dotenv.env['API_URL']}/chat',
+        '$apiUrl/chat',
         data: {
           'user_input': text,
           'session_id': _sessionId,
@@ -134,11 +178,22 @@ class _ChatScreenState extends State<ChatScreen> {
         },
       );
 
+      // Multiple debug output methods for response
+      developer.log('✅ API Response received', name: 'ChatScreen');
+      print('📥 Response data: ${response.data}');
+
+      if (kDebugMode) {
+        debugPrint('🎯 Response status: ${response.statusCode}');
+        debugPrint('📊 Response body: ${response.data}');
+      }
+
       final data = response.data;
       final botResponse = data['response'];
       final List<RestaurantInfo> restaurants = (data['suggestions'] as List)
           .map((r) => RestaurantInfo.fromJson(r))
           .toList();
+
+      developer.log('🍽️ Found ${restaurants.length} restaurants');
 
       setState(() {
         _messages.insert(0, Message(text: botResponse, isUser: false, restaurants: restaurants));
@@ -146,6 +201,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _speak(botResponse);
 
     } catch (e) {
+      developer.log('❌ API Error: $e', name: 'ChatScreen', error: e);
+      print('🚨 Error during API call: $e');
+
+      if (kDebugMode) {
+        debugPrint('💥 Exception details: $e');
+      }
+
       final errorMessage = "Sorry, I'm having trouble connecting. Please try again later.";
       setState(() {
         _messages.insert(0, Message(text: errorMessage, isUser: false));

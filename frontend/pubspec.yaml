@@ -39,6 +39,7 @@ dependencies:
   speech_to_text: ^7.2.0
   flutter_tts: ^4.2.3
   uuid: ^4.3.3
+  logger: ^2.0.2+1
 
   # Firebase dependencies - updated to compatible versions
   firebase_core: 4.0.0

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from typing import List, Dict, Any
 import os
 import uuid
@@ -53,6 +54,11 @@ async def root():
 async def health_check():
     """Health check endpoint to verify service status."""
     return {"status": "healthy", "agents": multi_agent_system.get_agent_status()}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return an empty favicon to prevent 404 errors."""
+    return Response(status_code=204)
 
 @app.post("/chat", response_model=ConversationResponse, tags=["Chat"])
 async def chat(request: ConversationRequest):

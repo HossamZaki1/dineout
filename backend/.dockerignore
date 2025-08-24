@@ -1,0 +1,33 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore virtual environment
+venv/
+env/
+
+# Ignore environment files (secrets should be set in Cloud Run)
+.env
+.env.*
+
+# Ignore development files
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Ignore test files
+test_*.py
+*_test.py
+tests/
+
+# Ignore setup scripts
+setup_env.sh
+start.sh
+
+# Ignore validation scripts
+simple_config_check.py
+validate_config.py
+test_chroma.py
+test_system.py

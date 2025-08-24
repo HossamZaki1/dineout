@@ -5,6 +5,10 @@ from app.agents.base_agent import BaseAgent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 from typing import Optional
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ConversationDetails(BaseModel):
     """Structured data extracted from the user's request."""
@@ -40,15 +44,23 @@ class ChatAgent(BaseAgent):
             ("system", """
 You are a friendly and helpful assistant for a restaurant suggestion app.
 Your goal is to understand the user's request and extract the necessary information to find restaurants.
-The required information is: location, cuisine, and search_radius.
 
-- If the user's request is clearly about finding restaurants, set intent to 'search_restaurants'.
-- If the user provides some but not all information, ask a clarifying question in the 'response' field and set intent to 'clarification'. For example, if they provide a location but not a cuisine, ask them what kind of food they're looking for.
-- If the user's request is not about finding restaurants, politely decline in the 'response' field and set intent to 'other'.
-- The user's location is critical. If it's not provided, you must ask for it.
-- Assume a default search radius of 5000 meters if not specified.
-- For cuisine, if the user doesn't specify, you can default to 'any'.
-- Keep your response friendly and conversational.
+Analyze the user's input and respond with a JSON object containing:
+- intent: 'search_restaurants' if looking for restaurants, 'clarification' if need more info, 'other' if unrelated
+- location: the city/area mentioned (null if not provided)
+- cuisine: the food type mentioned (null if not specified, 'any' if they want any type)
+- search_radius: 5000 (default)
+- response: a friendly conversational response
+
+Examples:
+User: "I want Italian food in San Francisco"
+{{"intent": "search_restaurants", "location": "San Francisco", "cuisine": "Italian", "search_radius": 5000, "response": "Great! I'll help you find Italian restaurants in San Francisco."}}
+
+User: "Find restaurants in NYC"
+{{"intent": "clarification", "location": "NYC", "cuisine": null, "search_radius": 5000, "response": "I'd be happy to help you find restaurants in NYC! What type of cuisine are you in the mood for?"}}
+
+User: "What's the weather?"
+{{"intent": "other", "location": null, "cuisine": null, "search_radius": 5000, "response": "I'm a restaurant finder assistant. I can help you discover great places to eat! What kind of food are you looking for?"}}
 """),
             ("human", "Previous conversation: {history}"),
             ("human", "User request: {input}"),
@@ -56,10 +68,41 @@ The required information is: location, cuisine, and search_radius.
 
         chain = prompt | self.llm
         
-        return chain.invoke({
-            "input": user_input,
-            "history": history
-        })
+        try:
+            response = chain.invoke({
+                "input": user_input,
+                "history": history
+            })
+
+            # Parse the JSON response from the LLM
+            response_text = response.content.strip()
+
+            # Try to extract JSON from the response
+            if response_text.startswith('```json'):
+                # Remove markdown code block formatting
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+            response_data = json.loads(response_text)
+
+            # Create ConversationDetails object from parsed JSON
+            return ConversationDetails(
+                intent=response_data.get('intent', 'other'),
+                location=response_data.get('location'),
+                cuisine=response_data.get('cuisine'),
+                search_radius=response_data.get('search_radius', 5000),
+                response=response_data.get('response', 'I can help you find restaurants!')
+            )
+
+        except (json.JSONDecodeError, KeyError) as e:
+            # Fallback if JSON parsing fails
+            logger.error(f"Failed to parse LLM response: {e}")
+            return ConversationDetails(
+                intent='other',
+                location=None,
+                cuisine=None,
+                search_radius=5000,
+                response="I'm here to help you find restaurants! Could you tell me what kind of food you're looking for and where?"
+            )
 
 if __name__ == '__main__':
     # Example usage
