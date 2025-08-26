@@ -2,7 +2,6 @@ import asyncio
 import time
 from typing import Dict, List, Any, Optional
 import logging
-
 from .base_agent import BaseAgent
 from .search_agent import SearchAgent
 from .photo_agent import PhotoAgent
@@ -102,7 +101,7 @@ class MultiAgentSystem:
             async def process_restaurant(resto):
                 # Photo Agent: Get photo URLs
                 photo_data = resto.get('photos', [])
-                photo_urls = await self.agents['photo'].get_photo_urls(photo_data)
+                photo_url = await self.agents['photo'].get_primary_photo_url(photo_data)
                 
                 # Presentation Agent: Create a summary
                 resto['cuisine'] = cuisine_type # Add cuisine to info for summary
@@ -113,7 +112,7 @@ class MultiAgentSystem:
                     address=resto.get('address'),
                     rating=resto.get('rating'),
                     is_open_now=resto.get('is_open_now'),
-                    photo_urls=photo_urls,
+                    photo_url=photo_url,
                     summary=summary
                 )
 

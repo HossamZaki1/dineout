@@ -16,12 +16,12 @@ class RestaurantRequest(BaseModel):
 
 class RestaurantInfo(BaseModel):
     """Detailed information about a single restaurant."""
-    name: str
-    address: str
-    rating: float
-    is_open_now: bool
-    photo_urls: List[str] = []
-    summary: str = Field(..., description="AI-generated summary of the restaurant's vibe and reviews.")
+    name: Optional[str]
+    address: Optional[str]
+    rating: Optional[float]
+    is_open_now: Optional[bool]
+    photo_url: Optional[str] = None
+    summary: Optional[str]
 
 class RestaurantResponse(BaseModel):
     """Response model containing a list of restaurant suggestions."""

@@ -15,17 +15,16 @@ class PhotoAgent(BaseAgent):
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY not found in environment variables")
 
-    async def get_photo_urls(self, photos_data: List[Dict]) -> List[str]:
+    async def get_primary_photo_url(self, photos_data: List[Dict]) -> str | None:
         """
-        Constructs photo URLs from the photo data provided by the Places API.
+        Constructs a single photo URL for the primary (first) photo from the Places API data.
         """
-        photo_urls = []
-        for photo in photos_data:
-            # The 'name' field in the photo object contains the resource name needed for the URL.
-            photo_name = photo.get('name')
-            if photo_name:
-                # Construct the URL for the photo
-                # You can specify max height and width
-                url = f"https://places.googleapis.com/v1/{photo_name}/media?maxHeightPx=400&key={self.api_key}"
-                photo_urls.append(url)
-        return photo_urls
+        if not photos_data:
+            return None
+        
+        primary_photo = photos_data[0]
+        photo_name = primary_photo.get('name')
+        
+        if photo_name:
+            return f"https://places.googleapis.com/v1/{photo_name}/media?maxHeightPx=400&key={self.api_key}"
+        return None
