@@ -26,6 +26,10 @@ class AuthService extends BaseAuthService {
     await _emailAuth.sendPasswordResetEmail(email);
   }
 
+  Future<void> resetPassword(String email) async {
+    await _emailAuth.sendPasswordResetEmail(email);
+  }
+
   // Google Authentication Methods
   Future<UserCredential?> signInWithGoogle() async {
     return await _googleAuth.signInWithGoogle();

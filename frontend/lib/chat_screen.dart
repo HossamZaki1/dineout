@@ -9,6 +9,9 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:uuid/uuid.dart';
+import 'services/auth_service.dart';
+import 'services/conversation_service.dart';
+import 'models/conversation.dart';
 
 // Data Models
 class Message {
@@ -37,7 +40,10 @@ class RestaurantInfo {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, this.sessionId, this.initialTitle});
+
+  final String? sessionId;
+  final String? initialTitle;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -49,6 +55,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = false;
   String? _sessionId;
   final Dio _dio = Dio();
+  final AuthService _authService = AuthService();
+  final ConversationService _conversationService = ConversationService();
+  late DateTime _sessionStartedAt;
 
   // Speech and TTS
   final SpeechToText _speechToText = SpeechToText();
@@ -175,6 +184,7 @@ class _ChatScreenState extends State<ChatScreen> {
           'user_input': text,
           'session_id': _sessionId,
           'history': history,
+          'user_id': _authService.currentUser?.uid,
         },
       );
 
@@ -200,6 +210,9 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       _speak(botResponse);
 
+      // Save/update conversation metadata with assistant preview
+      await _saveConversationMeta(preview: botResponse);
+
     } catch (e) {
       developer.log('❌ API Error: $e', name: 'ChatScreen', error: e);
       print('🚨 Error during API call: $e');
@@ -213,10 +226,41 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages.insert(0, Message(text: errorMessage, isUser: false));
       });
       _speak(errorMessage);
+
+      // Save/update conversation metadata with error preview
+      await _saveConversationMeta(preview: errorMessage);
     } finally {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _saveConversationMeta({required String preview}) async {
+    try {
+      final title = _deriveTitle() ?? widget.initialTitle ?? 'New Search';
+      final meta = ConversationMeta(
+        id: _sessionId!,
+        title: title,
+        createdAt: _sessionStartedAt,
+        updatedAt: DateTime.now(),
+        lastMessagePreview: preview,
+      );
+      final userId = _authService.currentUser?.uid;
+      await _conversationService.upsertConversation(meta, userId: userId);
+    } catch (e) {
+      developer.log('⚠️ Failed saving conversation meta: $e');
+    }
+  }
+
+  String? _deriveTitle() {
+    try {
+      final earliestUser = _messages.reversed.firstWhere((m) => m.isUser, orElse: () => Message(text: '', isUser: true));
+      final raw = earliestUser.text.trim();
+      if (raw.isEmpty) return null;
+      return raw.length <= 50 ? raw : raw.substring(0, 50) + '…';
+    } catch (_) {
+      return null;
     }
   }
 

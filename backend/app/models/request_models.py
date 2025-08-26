@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
+from datetime import datetime
 
 class RestaurantRequest(BaseModel):
     """Request model for finding restaurants."""
@@ -52,6 +53,7 @@ class ConversationRequest(BaseModel):
     user_input: str = Field(..., description="The user's message to the chatbot.")
     session_id: Optional[str] = Field(None, description="The existing session ID to maintain conversation context.")
     history: Optional[List[Dict[str, str]]] = Field([], description="The conversation history.")
+    user_id: Optional[str] = Field(None, description="Optional user ID for persisting conversation metadata on the server.")
 
 class ConversationResponse(BaseModel):
     """Response model for conversational interaction."""
@@ -60,3 +62,18 @@ class ConversationResponse(BaseModel):
     response: str
     suggestions: List[RestaurantInfo]
     processing_time_seconds: float
+
+# New models for conversation metadata endpoints
+class ConversationMeta(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_message_preview: str = ""
+
+class ConversationMetaUpsert(BaseModel):
+    id: str
+    title: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    last_message_preview: Optional[str] = None

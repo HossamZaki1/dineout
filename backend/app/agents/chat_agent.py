@@ -40,6 +40,10 @@ class ChatAgent(BaseAgent):
         Returns:
             A ConversationDetails object with the extracted information.
         """
+        # Ensure the agent is initialized
+        if not self.is_initialized or not self.llm:
+            raise RuntimeError("ChatAgent not initialized. Call initialize() first.")
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", """
 You are a friendly and helpful assistant for a restaurant suggestion app.
@@ -61,6 +65,8 @@ User: "Find restaurants in NYC"
 
 User: "What's the weather?"
 {{"intent": "other", "location": null, "cuisine": null, "search_radius": 5000, "response": "I'm a restaurant finder assistant. I can help you discover great places to eat! What kind of food are you looking for?"}}
+
+Always respond with valid JSON only, no additional text.
 """),
             ("human", "Previous conversation: {history}"),
             ("human", "User request: {input}"),
@@ -71,18 +77,29 @@ User: "What's the weather?"
         try:
             response = chain.invoke({
                 "input": user_input,
-                "history": history
+                "history": str(history) if history else "No previous conversation"
             })
 
             # Parse the JSON response from the LLM
             response_text = response.content.strip()
+            logger.info(f"Raw LLM response: {response_text}")
 
             # Try to extract JSON from the response
             if response_text.startswith('```json'):
                 # Remove markdown code block formatting
                 response_text = response_text.replace('```json', '').replace('```', '').strip()
+            elif response_text.startswith('```'):
+                # Remove any code block formatting
+                response_text = response_text.replace('```', '').strip()
+
+            # Find JSON object in the response
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx != -1 and end_idx > start_idx:
+                response_text = response_text[start_idx:end_idx]
 
             response_data = json.loads(response_text)
+            logger.info(f"Parsed response data: {response_data}")
 
             # Create ConversationDetails object from parsed JSON
             return ConversationDetails(
@@ -95,7 +112,7 @@ User: "What's the weather?"
 
         except (json.JSONDecodeError, KeyError) as e:
             # Fallback if JSON parsing fails
-            logger.error(f"Failed to parse LLM response: {e}")
+            logger.error(f"Failed to parse LLM response: {e}. Raw response: {response_text if 'response_text' in locals() else 'No response'}")
             return ConversationDetails(
                 intent='other',
                 location=None,
