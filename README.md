@@ -1,10 +1,10 @@
 # Remedy Bot - Multi-Agent Action Analysis System
 
-# DineOut AI 🍽️🤖
+# DineQuest AI 🍽️🤖
 
 **Your personal AI-powered assistant for discovering the perfect restaurant.**
 
-DineOut AI is a full-stack application that leverages a sophisticated multi-agent AI system to provide real-time restaurant recommendations. It features a voice-driven conversational interface built with Flutter and a powerful backend powered by Python, FastAPI, and Google's Gemini & Maps APIs.
+DineQuest AI is a full-stack application that leverages a sophisticated multi-agent AI system to provide real-time restaurant recommendations. It features a voice-driven conversational interface built with Flutter and a powerful backend powered by Python, FastAPI, and Google's Gemini & Maps APIs.
 
 ---
 

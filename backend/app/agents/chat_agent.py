@@ -3,7 +3,7 @@ Chat Agent: Understands user's request, identifies intent, and extracts entities
 """
 from app.agents.base_agent import BaseAgent
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Optional
 import json
 import logging
@@ -12,11 +12,12 @@ logger = logging.getLogger(__name__)
 
 class ConversationDetails(BaseModel):
     """Structured data extracted from the user's request."""
-    intent: str = Field(description="The user's intent. Should be 'search_restaurants' or 'clarification' or 'other'.")
+    intent: str = Field(description="The user's intent. Should be 'search_restaurants' or 'location_clarification' or 'cuisine_clarification' or 'other'.")
     location: Optional[str] = Field(description="The city or area the user wants to search for restaurants in.")
     cuisine: Optional[str] = Field(description="The type of food the user is interested in (e.g., 'Italian', 'Mexican', 'any').")
     search_radius: int = Field(default=5000, description="The search radius in meters.")
     response: str = Field(description="A natural language response to the user.")
+    location_ambiguous: bool = Field(default=False, description="True if the location is too broad or ambiguous.")
 
 class ChatAgent(BaseAgent):
     """An agent that analyzes user input to determine intent and extract entities."""
@@ -50,21 +51,32 @@ You are a friendly and helpful assistant for a restaurant suggestion app.
 Your goal is to understand the user's request and extract the necessary information to find restaurants.
 
 Analyze the user's input and respond with a JSON object containing:
-- intent: 'search_restaurants' if looking for restaurants, 'clarification' if need more info, 'other' if unrelated
+- intent: 'search_restaurants' if ready to search, 'location_clarification' if location is too broad, 'cuisine_clarification' if need cuisine info, 'other' if unrelated
 - location: the city/area mentioned (null if not provided)
 - cuisine: the food type mentioned (null if not specified, 'any' if they want any type)
 - search_radius: 5000 (default)
 - response: a friendly conversational response
+- location_ambiguous: true if location is too broad/vague (countries, regions, generic terms like "city center", "downtown", "north coast")
+
+LOCATION AMBIGUITY RULES:
+- TOO BROAD/AMBIGUOUS: Countries (Germany, USA, Italy), regions (North Coast, East Coast, Southern California), generic areas (City Center, Downtown, Mall Area, Business District)
+- SPECIFIC ENOUGH: Cities (Berlin, San Francisco, Rome), neighborhoods (SoHo NYC, Castro SF), addresses, landmarks (near Golden Gate Bridge)
 
 Examples:
 User: "I want Italian food in San Francisco"
-{{"intent": "search_restaurants", "location": "San Francisco", "cuisine": "Italian", "search_radius": 5000, "response": "Great! I'll help you find Italian restaurants in San Francisco."}}
+{{"intent": "search_restaurants", "location": "San Francisco", "cuisine": "Italian", "search_radius": 5000, "response": "Great! I'll help you find Italian restaurants in San Francisco.", "location_ambiguous": false}}
+
+User: "Find restaurants in Germany"
+{{"intent": "location_clarification", "location": "Germany", "cuisine": null, "search_radius": 5000, "response": "Germany is quite large! Could you specify which city or area in Germany you'd like me to search? For example, Berlin, Munich, Hamburg, etc.", "location_ambiguous": true}}
+
+User: "I want pizza in the city center"
+{{"intent": "location_clarification", "location": "city center", "cuisine": "pizza", "search_radius": 5000, "response": "I'd love to help you find pizza! Could you tell me which city center you're referring to? Please specify the city name.", "location_ambiguous": true}}
+
+User: "Find sushi on the North Coast"
+{{"intent": "location_clarification", "location": "North Coast", "cuisine": "sushi", "search_radius": 5000, "response": "The North Coast covers a large area! Could you be more specific about which city or town you're looking for sushi in?", "location_ambiguous": true}}
 
 User: "Find restaurants in NYC"
-{{"intent": "clarification", "location": "NYC", "cuisine": null, "search_radius": 5000, "response": "I'd be happy to help you find restaurants in NYC! What type of cuisine are you in the mood for?"}}
-
-User: "What's the weather?"
-{{"intent": "other", "location": null, "cuisine": null, "search_radius": 5000, "response": "I'm a restaurant finder assistant. I can help you discover great places to eat! What kind of food are you looking for?"}}
+{{"intent": "cuisine_clarification", "location": "NYC", "cuisine": null, "search_radius": 5000, "response": "I'd be happy to help you find restaurants in NYC! What type of cuisine are you in the mood for?", "location_ambiguous": false}}
 
 Always respond with valid JSON only, no additional text.
 """),
@@ -107,7 +119,8 @@ Always respond with valid JSON only, no additional text.
                 location=response_data.get('location'),
                 cuisine=response_data.get('cuisine'),
                 search_radius=response_data.get('search_radius', 5000),
-                response=response_data.get('response', 'I can help you find restaurants!')
+                response=response_data.get('response', 'I can help you find restaurants!'),
+                location_ambiguous=response_data.get('location_ambiguous', False)
             )
 
         except (json.JSONDecodeError, KeyError) as e:
@@ -122,6 +135,7 @@ Always respond with valid JSON only, no additional text.
             )
 
 if __name__ == '__main__':
+    """
     # Example usage
     chat_agent = ChatAgent()
     
@@ -139,3 +153,4 @@ if __name__ == '__main__':
     print("\n--- Example 3: Irrelevant request ---")
     result3 = chat_agent.run("What's the weather like today?")
     print(result3)
+    """

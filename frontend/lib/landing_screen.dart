@@ -14,7 +14,7 @@ class LandingScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DineOut AI'),
+        title: const Text('DineQuest AI'),
         actions: [
           if (user != null)
             PopupMenuButton<String>(
@@ -43,7 +43,10 @@ class LandingScreen extends StatelessWidget {
                           ),
                           Text(
                             user.email ?? user.phoneNumber ?? '',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
                         ],
                       ),
@@ -69,8 +72,8 @@ class LandingScreen extends StatelessWidget {
                     (user.displayName?.isNotEmpty == true
                         ? user.displayName![0].toUpperCase()
                         : user.email?.isNotEmpty == true
-                            ? user.email![0].toUpperCase()
-                            : 'U'),
+                        ? user.email![0].toUpperCase()
+                        : 'U'),
                     style: TextStyle(
                       color: Colors.deepOrange.shade700,
                       fontWeight: FontWeight.bold,
@@ -92,10 +95,10 @@ class LandingScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              'DineOut AI',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              'DineQuest AI',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             const Text(
@@ -107,7 +110,10 @@ class LandingScreen extends StatelessWidget {
             if (user != null) ...[
               const SizedBox(height: 20),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -135,11 +141,16 @@ class LandingScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const ChatScreen()),
+                        MaterialPageRoute(
+                          builder: (context) => const ChatScreen(),
+                        ),
                       );
                     },
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
+                      ),
                       textStyle: const TextStyle(fontSize: 18),
                       backgroundColor: Theme.of(context).primaryColor,
                       foregroundColor: Colors.white,
@@ -152,11 +163,16 @@ class LandingScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const PastSearchesScreen()),
+                        MaterialPageRoute(
+                          builder: (context) => const PastSearchesScreen(),
+                        ),
                       );
                     },
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
+                      ),
                       textStyle: const TextStyle(fontSize: 18),
                     ),
                   ),

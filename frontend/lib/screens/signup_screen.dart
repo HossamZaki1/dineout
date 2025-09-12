@@ -108,7 +108,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Join DineOut AI to discover amazing restaurants',
+                      'Join DineQuest AI to discover amazing restaurants',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey,

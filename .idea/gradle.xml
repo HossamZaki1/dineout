@@ -20,11 +20,14 @@
         <option name="gradleJvm" value="#GRADLE_LOCAL_JAVA_HOME" />
         <option name="modules">
           <set>
+            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/cloud_firestore-6.0.0/android" />
             <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/firebase_auth-6.0.1/android" />
             <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/firebase_core-4.0.0/android" />
             <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_tts-4.2.3/android" />
             <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/google_sign_in_android-7.0.3/android" />
+            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.11/android" />
             <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/speech_to_text-7.2.0/android" />
+            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.18/android" />
             <option value="$PROJECT_DIR$/frontend/android" />
             <option value="$PROJECT_DIR$/frontend/android/app" />
             <option value="$USER_HOME$/development/flutter/packages/flutter_tools/gradle" />

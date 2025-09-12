@@ -1,4 +1,4 @@
-# Google Cloud Deployment Guide for DineOut Backend
+# Google Cloud Deployment Guide for DineQuest Backend
 
 ## Prerequisites
 
@@ -63,10 +63,10 @@ API_BASE_URL=https://your-service-url-from-cloud-run.run.app
 
 ```bash
 # View logs
-gcloud run logs read --service=dineout-backend --region=us-central1
+gcloud run logs read --service=dinequest-backend --region=us-central1
 
 # Get service info
-gcloud run services describe dineout-backend --region=us-central1
+gcloud run services describe dinequest-backend --region=us-central1
 ```
 
 ## Cost Optimization

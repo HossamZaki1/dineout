@@ -3,7 +3,7 @@
 # Mock API request to test the chat endpoint
 # This simulates the exact request your Flutter app makes
 
-echo "🚀 Testing DineOut Chat API..."
+echo "🚀 Testing DineQuest Chat API..."
 echo "Backend URL: http://127.0.0.1:8080"
 echo ""
 

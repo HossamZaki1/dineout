@@ -35,7 +35,7 @@ class AuthWrapper extends StatelessWidget {
           }
 
           // User is signed in and verified, show main app
-          return const MyHomePage(title: 'DineOut AI');
+          return const MyHomePage(title: 'DineQuest AI');
         }
 
         // User is not signed in, show login screen

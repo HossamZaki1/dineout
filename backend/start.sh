@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Simple start script for Google Cloud Run
-echo "🚀 Starting DineOut backend on Google Cloud Run..."
+echo "🚀 Starting DineQuest backend on Google Cloud Run..."
 
 # The environment variables are automatically set by Cloud Run
 export HOST=${HOST:-0.0.0.0}

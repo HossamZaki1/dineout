@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 import logging
+import uuid
 
 # For type-checking, we can import the full types.
 # This will be skipped at runtime, so no ImportError will be raised.
@@ -38,7 +39,14 @@ class FirestoreConversationStore:
                 title: string
                 created_at: Firestore Timestamp (stored as datetime)
                 updated_at: Firestore Timestamp (stored as datetime)
-                last_message_preview: string
+                message_count: number
+              Subcollection: messages
+                Document: <message_id> (auto-generated)
+                  Fields:
+                    role: string ('user' | 'assistant')
+                    content: string
+                    timestamp: Firestore Timestamp (stored as datetime)
+                    restaurant_suggestions: array (optional)
     """
 
     def __init__(self, client: Optional["firestore.Client"] = None):
@@ -69,23 +77,69 @@ class FirestoreConversationStore:
             .document(user_id)
             .collection("conversations")
         )
+    
+    def _msgs_col(self, user_id: str, conv_id: str) -> "CollectionReference":
+        """Gets a reference to the messages subcollection for a conversation."""
+        return (
+            self.client.collection("users")
+            .document(user_id)
+            .collection("conversations")
+            .document(conv_id)
+            .collection("messages")
+        )
 
     def list(self, user_id: str) -> List[Dict]:
         """
         Lists all conversations for a user, ordered by most recently updated.
+        Includes a preview generated from the latest messages.
 
         Args:
             user_id: The ID of the user.
 
         Returns:
-            A list of conversation metadata dictionaries.
+            A list of conversation metadata dictionaries with previews.
         """
         docs = (
             self._convs_col(user_id)
             .order_by("updated_at", direction=firestore.Query.DESCENDING)
             .stream()
         )
-        return [_to_api(d) for d in docs]
+        
+        conversations = []
+        for doc in docs:
+            conv_data = _to_api(doc)
+            
+            # Generate preview from latest messages
+            try:
+                latest_messages = (
+                    self._msgs_col(user_id, conv_data["id"])
+                    .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                    .limit(2)  # Get last user and assistant message
+                    .stream()
+                )
+                
+                preview_parts = []
+                for msg_doc in latest_messages:
+                    msg_data = msg_doc.to_dict() or {}
+                    role = msg_data.get("role", "")
+                    content = msg_data.get("content", "")
+                    
+                    if role == "user":
+                        user_preview = content[:30] + "..." if len(content) > 30 else content
+                        preview_parts.insert(0, f"You: {user_preview}")
+                    elif role == "assistant":
+                        ai_preview = content[:50] + "..." if len(content) > 50 else content
+                        preview_parts.append(f"AI: {ai_preview}")
+                
+                conv_data["last_message_preview"] = "\n".join(preview_parts) if preview_parts else ""
+                
+            except Exception as e:
+                logger.warning(f"Failed to generate preview for conversation {conv_data['id']}: {e}")
+                conv_data["last_message_preview"] = ""
+            
+            conversations.append(conv_data)
+        
+        return conversations
 
     def upsert(self, user_id: str, meta: Dict) -> Dict:
         """
@@ -114,11 +168,14 @@ class FirestoreConversationStore:
                 meta.get("created_at") or existing.get("created_at", now_dt)
             ),
             "updated_at": _ensure_dt(meta.get("updated_at", now_dt)),
-            "last_message_preview": meta.get("last_message_preview")
-            or existing.get("last_message_preview", ""),
+            "message_count": meta.get("message_count") or existing.get("message_count", 0),
         }
         doc_ref.set(payload, merge=True)
-        return _to_api(payload)
+        
+        # Return with generated preview for compatibility
+        result = _to_api(payload)
+        result["last_message_preview"] = meta.get("last_message_preview", "")
+        return result
 
     def delete(self, user_id: str, conversation_id: str) -> bool:
         """
@@ -148,6 +205,165 @@ class FirestoreConversationStore:
         for doc in self._convs_col(user_id).stream():
             batch.delete(doc.reference)
         batch.commit()
+    
+    # --- Message Management Methods ---
+    
+    def add_message(self, user_id: str, conversation_id: str, message: Dict) -> Dict:
+        """
+        Adds a message to a conversation.
+
+        Args:
+            user_id: The ID of the user.
+            conversation_id: The ID of the conversation.
+            message: A dictionary containing message data (role, content, timestamp, etc.).
+
+        Returns:
+            The added message as a dictionary with generated ID.
+        """
+        msgs_col = self._msgs_col(user_id, conversation_id)
+        
+        # Prepare message data
+        now_dt = datetime.now(timezone.utc)
+        message_data = {
+            "role": message.get("role", "user"),
+            "content": message.get("content", ""),
+            "timestamp": _ensure_dt(message.get("timestamp", now_dt)),
+            "restaurant_suggestions": message.get("restaurant_suggestions", [])
+        }
+        
+        # Add message to subcollection
+        doc_ref = msgs_col.add(message_data)[1]
+        message_data["id"] = doc_ref.id
+        
+        # Update conversation metadata
+        conv_ref = self._conv_ref(user_id, conversation_id)
+        conv_ref.update({
+            "updated_at": now_dt,
+            "message_count": firestore.Increment(1)
+        })
+        
+        return _message_to_api(message_data)
+    
+    def get_messages(self, user_id: str, conversation_id: str, limit: Optional[int] = None) -> List[Dict]:
+        """
+        Retrieves messages for a conversation.
+
+        Args:
+            user_id: The ID of the user.
+            conversation_id: The ID of the conversation.
+            limit: Optional limit on number of messages to retrieve.
+
+        Returns:
+            A list of message dictionaries ordered by timestamp.
+        """
+        query = (
+            self._msgs_col(user_id, conversation_id)
+            .order_by("timestamp", direction=firestore.Query.ASCENDING)
+        )
+        
+        if limit:
+            query = query.limit(limit)
+        
+        docs = query.stream()
+        messages = []
+        for doc in docs:
+            msg_data = doc.to_dict() or {}
+            msg_data["id"] = doc.id
+            messages.append(_message_to_api(msg_data))
+        
+        return messages
+    
+    def get_conversation_full(self, user_id: str, conversation_id: str) -> Optional[Dict]:
+        """
+        Retrieves a complete conversation including metadata and all messages.
+
+        Args:
+            user_id: The ID of the user.
+            conversation_id: The ID of the conversation.
+
+        Returns:
+            A dictionary containing conversation metadata and messages, or None if not found.
+        """
+        # Get conversation metadata
+        conv_ref = self._conv_ref(user_id, conversation_id)
+        conv_snap = conv_ref.get()
+        if not conv_snap.exists:
+            return None
+        
+        conv_data = _to_api(conv_snap)
+        
+        # Get all messages
+        messages = self.get_messages(user_id, conversation_id)
+        
+        conv_data["messages"] = messages
+        return conv_data
+    
+    def save_conversation_batch(self, user_id: str, conversation_id: str, 
+                               messages: List[Dict], metadata: Optional[Dict] = None) -> Dict:
+        """
+        Saves multiple messages to a conversation in a batch operation.
+
+        Args:
+            user_id: The ID of the user.
+            conversation_id: The ID of the conversation.
+            messages: List of message dictionaries to save.
+            metadata: Optional conversation metadata to update.
+
+        Returns:
+            Updated conversation metadata.
+        """
+        batch = self.client.batch()
+        msgs_col = self._msgs_col(user_id, conversation_id)
+        
+        # Add each message
+        for message in messages:
+            msg_data = {
+                "role": message.get("role", "user"),
+                "content": message.get("content", ""),
+                "timestamp": _ensure_dt(message.get("timestamp", datetime.now(timezone.utc))),
+                "restaurant_suggestions": message.get("restaurant_suggestions", [])
+            }
+            doc_ref = msgs_col.document()  # Auto-generate ID
+            batch.set(doc_ref, msg_data)
+        
+        # Update conversation metadata
+        conv_ref = self._conv_ref(user_id, conversation_id)
+        update_data = {
+            "updated_at": datetime.now(timezone.utc),
+            "message_count": firestore.Increment(len(messages))
+        }
+        
+        if metadata:
+            if "title" in metadata:
+                update_data["title"] = metadata["title"]
+        
+        batch.update(conv_ref, update_data)
+        
+        # Commit the batch
+        batch.commit()
+        
+        # Return updated conversation metadata
+        conv_snap = conv_ref.get()
+        return _to_api(conv_snap) if conv_snap.exists else {}
+
+
+def _message_to_api(msg_data: Dict) -> Dict:
+    """
+    Converts a message dictionary to an API-safe dictionary.
+
+    Args:
+        msg_data: The message data dictionary.
+
+    Returns:
+        A dictionary with serializable values for message data.
+    """
+    return {
+        "id": msg_data.get("id", ""),
+        "role": msg_data.get("role", "user"),
+        "content": msg_data.get("content", ""),
+        "timestamp": _ensure_iso(msg_data.get("timestamp")),
+        "restaurant_suggestions": msg_data.get("restaurant_suggestions", [])
+    }
 
 
 def _to_api(d: Union["DocumentSnapshot", Dict]) -> Dict:
@@ -174,6 +390,7 @@ def _to_api(d: Union["DocumentSnapshot", Dict]) -> Dict:
         "title": data.get("title", "New Search"),
         "created_at": _ensure_iso(data.get("created_at")),
         "updated_at": _ensure_iso(data.get("updated_at")),
+        "message_count": data.get("message_count", 0),
         "last_message_preview": data.get("last_message_preview", ""),
     }
 

@@ -25,7 +25,7 @@ class BaseAgent(ABC):
                 raise ValueError("GOOGLE_API_KEY not found in environment variables")
             
             self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-flash-lite",
                 temperature=self.temperature,
                 google_api_key=google_api_key,
                 convert_system_message_to_human=True # Gemini API has a different message structure

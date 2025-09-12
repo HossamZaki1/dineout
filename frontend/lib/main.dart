@@ -35,7 +35,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DineOut AI',
+      title: 'DineQuest AI',
       theme: ThemeData(
         primarySwatch: Colors.deepOrange,
         appBarTheme: const AppBarTheme(
@@ -46,7 +46,7 @@ class MyApp extends StatelessWidget {
       home: const AuthWrapper(),
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/home': (context) => const MyHomePage(title: 'DineOut AI'),
+        '/home': (context) => const MyHomePage(title: 'DineQuest AI'),
       },
     );
   }

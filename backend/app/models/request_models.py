@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class RestaurantRequest(BaseModel):
@@ -7,13 +7,14 @@ class RestaurantRequest(BaseModel):
     location: str = Field(..., description="The city, address, or general area to search for restaurants.")
     cuisine_type: Optional[str] = Field(None, description="Optional cuisine type to filter by (e.g., 'Italian', 'Sushi').")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "location": "San Francisco, CA",
                 "cuisine_type": "sushi"
             }
         }
+    )
 
 class RestaurantInfo(BaseModel):
     """Detailed information about a single restaurant."""
@@ -23,6 +24,13 @@ class RestaurantInfo(BaseModel):
     is_open_now: Optional[bool]
     photo_url: Optional[str] = None
     summary: Optional[str]
+    place_id: Optional[str] = None
+    google_maps_uri: Optional[str] = None
+    opening_hours_periods: Optional[List[Dict[str, Any]]] = None
+    current_opening_hours: Optional[Dict[str, Any]] = None
+    regular_opening_hours: Optional[Dict[str, Any]] = None
+    next_opening_time: Optional[float] = None
+    next_opening_display: Optional[str] = None
 
 class RestaurantResponse(BaseModel):
     """Response model containing a list of restaurant suggestions."""
@@ -30,8 +38,8 @@ class RestaurantResponse(BaseModel):
     suggestions: List[RestaurantInfo]
     processing_time_seconds: float
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "session_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
                 "suggestions": [
@@ -47,33 +55,6 @@ class RestaurantResponse(BaseModel):
                 "processing_time_seconds": 4.75
             }
         }
+    )
 
-class ConversationRequest(BaseModel):
-    """Request model for conversational interaction."""
-    user_input: str = Field(..., description="The user's message to the chatbot.")
-    session_id: Optional[str] = Field(None, description="The existing session ID to maintain conversation context.")
-    history: Optional[List[Dict[str, str]]] = Field([], description="The conversation history.")
-    user_id: Optional[str] = Field(None, description="Optional user ID for persisting conversation metadata on the server.")
-
-class ConversationResponse(BaseModel):
-    """Response model for conversational interaction."""
-    session_id: str
-    intent: str
-    response: str
-    suggestions: List[RestaurantInfo]
-    processing_time_seconds: float
-
-# New models for conversation metadata endpoints
-class ConversationMeta(BaseModel):
-    id: str
-    title: str
-    created_at: datetime
-    updated_at: datetime
-    last_message_preview: str = ""
-
-class ConversationMetaUpsert(BaseModel):
-    id: str
-    title: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    last_message_preview: Optional[str] = None
+# Conversation models have been moved to app.conversations.models

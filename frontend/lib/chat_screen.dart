@@ -3,14 +3,17 @@ import 'dart:developer' as developer;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'services/auth_service.dart';
 import 'services/conversation_service.dart';
+import 'services/conversations_api_service.dart';
 import 'models/conversation.dart';
 
 // Data Models
@@ -18,8 +21,14 @@ class Message {
   final String text;
   final bool isUser;
   final List<RestaurantInfo> restaurants;
+  final bool wasSearchRequest;
 
-  Message({required this.text, this.isUser = true, this.restaurants = const []});
+  Message({
+    required this.text,
+    this.isUser = true,
+    this.restaurants = const [],
+    this.wasSearchRequest = false,
+  });
 }
 
 class RestaurantInfo {
@@ -29,14 +38,20 @@ class RestaurantInfo {
   final bool isOpenNow;
   final List<String> photoUrls;
   final String summary;
+  final String? placeId;
+  final String? googleMapsUri;
+  final String? nextOpeningDisplay;
 
   RestaurantInfo.fromJson(Map<String, dynamic> json)
-      : name = json['name'],
-        address = json['address'],
-        rating = (json['rating'] as num).toDouble(),
-        isOpenNow = json['is_open_now'],
-        photoUrls = List<String>.from(json['photo_urls']),
-        summary = json['summary'];
+    : name = json['name'] ?? '',
+      address = json['address'] ?? '',
+      rating = (json['rating'] as num?)?.toDouble() ?? 0.0,
+      isOpenNow = json['is_open_now'] ?? false,
+      photoUrls = json['photo_url'] != null ? [json['photo_url']] : <String>[],
+      summary = json['summary'] ?? '',
+      placeId = json['place_id'],
+      googleMapsUri = json['google_maps_uri'],
+      nextOpeningDisplay = json['next_opening_display'];
 }
 
 class ChatScreen extends StatefulWidget {
@@ -54,9 +69,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Message> _messages = [];
   bool _isLoading = false;
   String? _sessionId;
+  String? _tempUserId; // Add temporary user ID for unauthenticated users
   final Dio _dio = Dio();
   final AuthService _authService = AuthService();
   final ConversationService _conversationService = ConversationService();
+  final ConversationsApiService _conversationsApi = ConversationsApiService();
   late DateTime _sessionStartedAt;
 
   // Speech and TTS
@@ -88,8 +105,19 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _initSpeech();
-    _sessionId = const Uuid().v4();
-    _addInitialMessage();
+    _sessionId = widget.sessionId ?? const Uuid().v4();
+    _tempUserId =
+        _authService.currentUser?.uid ??
+        'temp_${_sessionId}'; // Generate temp user ID if not authenticated
+    _sessionStartedAt = DateTime.now(); // Initialize session start time
+
+    if (widget.sessionId != null) {
+      // Loading existing conversation
+      _loadConversationHistory();
+    } else {
+      // New conversation
+      _addInitialMessage();
+    }
 
     // Debug environment variables and platform-specific URL
     developer.log('🔧 Environment check:');
@@ -108,7 +136,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _addInitialMessage() {
-    const initialMessage = "Hi! I can help you find a great place to eat. Where are you looking for restaurants?";
+    const initialMessage =
+        "Hi! I can help you find a great place to eat. Where are you looking for restaurants?";
     setState(() {
       _messages.insert(0, Message(text: initialMessage, isUser: false));
     });
@@ -146,6 +175,47 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _openInGoogleMaps(RestaurantInfo restaurant) async {
+    try {
+      final query = '${restaurant.name}, ${restaurant.address}';
+      final encodedQuery = Uri.encodeComponent(query);
+      bool launched = false;
+
+      // Try 1: Simple Google Maps URL (works most reliably)
+      try {
+        final mapsUri = Uri.parse('https://maps.google.com/?q=$encodedQuery');
+        if (await canLaunchUrl(mapsUri)) {
+          await launchUrl(mapsUri, mode: LaunchMode.externalApplication);
+          launched = true;
+        }
+      } catch (e) {
+        developer.log('Maps URL failed: $e');
+      }
+
+      // Try 2: Android geo intent (if first failed and on Android)
+      if (!launched && Platform.isAndroid) {
+        try {
+          final geoUri = Uri.parse('geo:0,0?q=$encodedQuery');
+          if (await canLaunchUrl(geoUri)) {
+            await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+            launched = true;
+          }
+        } catch (e) {
+          developer.log('Geo URI failed: $e');
+        }
+      }
+
+      // Fallback: Simple error message
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open Google Maps')),
+        );
+      }
+    } catch (e) {
+      developer.log('Error opening maps: $e');
+    }
+  }
+
   Future<void> _handleSubmitted(String text) async {
     if (text.trim().isEmpty) return;
 
@@ -157,22 +227,38 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoading = true;
     });
 
+    // Save user message to local storage as backup
+    final userMessage = ConversationMessage(
+      role: 'user',
+      content: text,
+      timestamp: DateTime.now(),
+    );
+    try {
+      await _conversationService.addMessageToConversation(
+        _sessionId!,
+        userMessage,
+        userId: _tempUserId,
+      );
+    } catch (e) {
+      developer.log('⚠️ Failed saving user message locally: $e');
+    }
+
     try {
       final history = _messages
           .where((m) => m.text.isNotEmpty)
           .take(10) // Limit history size
-          .map((m) => {"role": m.isUser ? "user" : "assistant", "content": m.text})
+          .map(
+            (m) => {"role": m.isUser ? "user" : "assistant", "content": m.text},
+          )
           .toList()
           .reversed
           .toList();
 
       // Multiple debug output methods to ensure visibility in Android Studio
       developer.log('🚀 Sending API request to: $apiUrl/chat');
-      print('📤 Request data: ${{
-        'user_input': text,
-        'session_id': _sessionId,
-        'history': history,
-      }}');
+      print(
+        '📤 Request data: ${{'user_input': text, 'session_id': _sessionId, 'history': history}}',
+      );
 
       if (kDebugMode) {
         debugPrint('🔍 Debug: Making API call with user input: $text');
@@ -184,7 +270,7 @@ class _ChatScreenState extends State<ChatScreen> {
           'user_input': text,
           'session_id': _sessionId,
           'history': history,
-          'user_id': _authService.currentUser?.uid,
+          'user_id': _tempUserId,
         },
       );
 
@@ -199,20 +285,69 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final data = response.data;
       final botResponse = data['response'];
-      final List<RestaurantInfo> restaurants = (data['suggestions'] as List)
-          .map((r) => RestaurantInfo.fromJson(r))
-          .toList();
+      final List<RestaurantInfo> restaurants =
+          (data['suggestions'] as List?)
+              ?.map((r) => RestaurantInfo.fromJson(r))
+              .toList() ??
+          [];
 
       developer.log('🍽️ Found ${restaurants.length} restaurants');
 
       setState(() {
-        _messages.insert(0, Message(text: botResponse, isUser: false, restaurants: restaurants));
+        _messages.insert(
+          0,
+          Message(
+            text: botResponse,
+            isUser: false,
+            restaurants: restaurants,
+            wasSearchRequest: data['search_performed'] ?? false,
+          ),
+        );
       });
       _speak(botResponse);
 
+      // Save assistant message to local storage as backup
+      final assistantMessage = ConversationMessage(
+        role: 'assistant',
+        content: botResponse,
+        timestamp: DateTime.now(),
+        restaurantSuggestions: restaurants.isNotEmpty
+            ? restaurants
+                  .map(
+                    (r) => {
+                      'name': r.name,
+                      'address': r.address,
+                      'rating': r.rating,
+                      'is_open_now': r.isOpenNow,
+                      'photo_url': r.photoUrls.isNotEmpty
+                          ? r.photoUrls.first
+                          : null,
+                      'summary': r.summary,
+                      'next_opening_display': r.nextOpeningDisplay,
+                    },
+                  )
+                  .toList()
+            : null,
+      );
+      try {
+        await _conversationService.addMessageToConversation(
+          _sessionId!,
+          assistantMessage,
+          userId: _tempUserId,
+        );
+        // Update conversation metadata with restaurant suggestions summary
+        if (restaurants.isNotEmpty) {
+          await _conversationService.updateConversationWithSuggestions(
+            _sessionId!,
+            userId: _tempUserId,
+          );
+        }
+      } catch (e) {
+        developer.log('⚠️ Failed saving assistant message locally: $e');
+      }
+
       // Save/update conversation metadata with assistant preview
       await _saveConversationMeta(preview: botResponse);
-
     } catch (e) {
       developer.log('❌ API Error: $e', name: 'ChatScreen', error: e);
       print('🚨 Error during API call: $e');
@@ -221,11 +356,28 @@ class _ChatScreenState extends State<ChatScreen> {
         debugPrint('💥 Exception details: $e');
       }
 
-      final errorMessage = "Sorry, I'm having trouble connecting. Please try again later.";
+      final errorMessage =
+          "Sorry, I'm having trouble connecting. Please try again later.";
       setState(() {
         _messages.insert(0, Message(text: errorMessage, isUser: false));
       });
       _speak(errorMessage);
+
+      // Save error message to local storage as backup
+      final errorMessageObj = ConversationMessage(
+        role: 'assistant',
+        content: errorMessage,
+        timestamp: DateTime.now(),
+      );
+      try {
+        await _conversationService.addMessageToConversation(
+          _sessionId!,
+          errorMessageObj,
+          userId: _tempUserId,
+        );
+      } catch (e) {
+        developer.log('⚠️ Failed saving error message locally: $e');
+      }
 
       // Save/update conversation metadata with error preview
       await _saveConversationMeta(preview: errorMessage);
@@ -239,15 +391,38 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _saveConversationMeta({required String preview}) async {
     try {
       final title = _deriveTitle() ?? widget.initialTitle ?? 'New Search';
+
+      // Create a preview that includes the latest user-assistant exchange
+      String enhancedPreview = preview;
+      if (_messages.length >= 2) {
+        final latestAssistant = _messages.firstWhere(
+          (m) => !m.isUser,
+          orElse: () => Message(text: preview, isUser: false),
+        );
+        final latestUser = _messages.firstWhere(
+          (m) => m.isUser,
+          orElse: () => Message(text: '', isUser: true),
+        );
+
+        if (latestUser.text.isNotEmpty) {
+          final userPreview = latestUser.text.length > 30
+              ? '${latestUser.text.substring(0, 30)}...'
+              : latestUser.text;
+          final assistantPreview = latestAssistant.text.length > 50
+              ? '${latestAssistant.text.substring(0, 50)}...'
+              : latestAssistant.text;
+          enhancedPreview = 'You: $userPreview\nAI: $assistantPreview';
+        }
+      }
+
       final meta = ConversationMeta(
         id: _sessionId!,
         title: title,
         createdAt: _sessionStartedAt,
         updatedAt: DateTime.now(),
-        lastMessagePreview: preview,
+        lastMessagePreview: enhancedPreview,
       );
-      final userId = _authService.currentUser?.uid;
-      await _conversationService.upsertConversation(meta, userId: userId);
+      await _conversationService.upsertConversation(meta, userId: _tempUserId);
     } catch (e) {
       developer.log('⚠️ Failed saving conversation meta: $e');
     }
@@ -255,22 +430,178 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String? _deriveTitle() {
     try {
-      final earliestUser = _messages.reversed.firstWhere((m) => m.isUser, orElse: () => Message(text: '', isUser: true));
+      final earliestUser = _messages.reversed.firstWhere(
+        (m) => m.isUser,
+        orElse: () => Message(text: '', isUser: true),
+      );
       final raw = earliestUser.text.trim();
       if (raw.isEmpty) return null;
-      return raw.length <= 50 ? raw : raw.substring(0, 50) + '…';
+      return raw.length <= 50 ? raw : '${raw.substring(0, 50)}…';
     } catch (_) {
       return null;
+    }
+  }
+
+  // Shorten long strings by keeping the beginning and the end, removing the middle.
+  String _shortenMiddle(String input, {int maxLength = 60}) {
+    final String trimmed = input.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+
+    // Ensure there is room for an ellipsis character
+    if (maxLength <= 1) {
+      return '…';
+    }
+
+    final int headLength = (maxLength / 2).ceil();
+    final int tailLength = maxLength - headLength - 1; // 1 for ellipsis
+    final String head = trimmed.substring(0, headLength);
+    final String tail = trimmed.substring(trimmed.length - tailLength);
+    return '$head…$tail';
+  }
+
+  // Prefer keeping first and last comma-separated segments of an address.
+  String _compactAddress(String address, {int maxLength = 70}) {
+    final String trimmed = address.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+
+    final List<String> parts = trimmed
+        .split(',')
+        .map((String s) => s.trim())
+        .toList();
+
+    if (parts.length >= 3) {
+      final String candidate = '${parts.first}, …, ${parts.last}';
+      if (candidate.length <= maxLength) return candidate;
+      return _shortenMiddle(candidate, maxLength: maxLength);
+    }
+
+    return _shortenMiddle(trimmed, maxLength: maxLength);
+  }
+
+  Future<void> _loadConversationHistory() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      // Try to load from backend API first
+      try {
+        final messages = await _conversationsApi.getConversationMessages(
+          _tempUserId!,
+          _sessionId!,
+        );
+        if (messages.isNotEmpty) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(
+              messages.reversed.map((m) {
+                // Convert restaurant suggestions to RestaurantInfo objects
+                List<RestaurantInfo> restaurants = [];
+                if (m.restaurantSuggestions != null &&
+                    m.restaurantSuggestions!.isNotEmpty) {
+                  restaurants = m.restaurantSuggestions!
+                      .map((r) => RestaurantInfo.fromJson(r))
+                      .toList();
+                }
+
+                return Message(
+                  text: m.content,
+                  isUser: m.role == 'user',
+                  restaurants: restaurants,
+                  wasSearchRequest:
+                      m.role == 'assistant' && m.restaurantSuggestions != null,
+                );
+              }),
+            );
+          });
+          // Speak the last assistant message
+          final lastAssistantMessage = messages.lastWhere(
+            (m) => m.role == 'assistant',
+            orElse: () => ConversationMessage(
+              role: 'assistant',
+              content: '',
+              timestamp: DateTime.now(),
+            ),
+          );
+          if (lastAssistantMessage.content.isNotEmpty) {
+            _speak(lastAssistantMessage.content);
+          }
+          return;
+        }
+      } catch (apiError) {
+        developer.log(
+          '⚠️ Failed loading from API, trying local storage: $apiError',
+        );
+      }
+
+      // Fallback to local storage
+      final meta = await _conversationService.getConversationMeta(
+        _sessionId,
+        userId: _tempUserId,
+      );
+      if (meta != null) {
+        final history = await _conversationService.getConversationHistory(
+          _sessionId,
+          userId: _tempUserId,
+        );
+        if (history != null && history.isNotEmpty) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(
+              history.reversed.map((m) {
+                // Convert restaurant suggestions to RestaurantInfo objects
+                List<RestaurantInfo> restaurants = [];
+                if (m.restaurantSuggestions != null &&
+                    m.restaurantSuggestions!.isNotEmpty) {
+                  restaurants = m.restaurantSuggestions!
+                      .map((r) => RestaurantInfo.fromJson(r))
+                      .toList();
+                }
+
+                return Message(
+                  text: m.content,
+                  isUser: m.role == 'user',
+                  restaurants: restaurants,
+                  wasSearchRequest:
+                      m.role == 'assistant' && m.restaurantSuggestions != null,
+                );
+              }),
+            );
+          });
+          final lastAssistantMessage = history.lastWhere(
+            (m) => m.role == 'assistant',
+            orElse: () => ConversationMessage(
+              role: 'assistant',
+              content: '',
+              timestamp: DateTime.now(),
+            ),
+          );
+          if (lastAssistantMessage.content.isNotEmpty) {
+            _speak(lastAssistantMessage.content);
+          }
+        } else {
+          setState(() {
+            _messages.clear();
+            _messages.add(
+              Message(text: meta.lastMessagePreview, isUser: false),
+            );
+          });
+          _speak(meta.lastMessagePreview);
+        }
+      }
+    } catch (e) {
+      developer.log('⚠️ Failed loading conversation history: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Restaurant Finder AI'),
-        elevation: 2,
-      ),
+      appBar: AppBar(title: const Text('Restaurant Finder AI'), elevation: 2),
+      resizeToAvoidBottomInset: true,
       body: Column(
         children: [
           Expanded(
@@ -278,7 +609,8 @@ class _ChatScreenState extends State<ChatScreen> {
               reverse: true,
               padding: const EdgeInsets.all(8.0),
               itemCount: _messages.length,
-              itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
+              itemBuilder: (_, int index) =>
+                  _buildMessageItem(_messages[index]),
             ),
           ),
           if (_isLoading) const LinearProgressIndicator(),
@@ -298,7 +630,9 @@ class _ChatScreenState extends State<ChatScreen> {
       margin: const EdgeInsets.symmetric(vertical: 10.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: message.isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!message.isUser)
             const CircleAvatar(child: Icon(Icons.restaurant_menu)),
@@ -307,7 +641,9 @@ class _ChatScreenState extends State<ChatScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 8.0),
               padding: const EdgeInsets.all(12.0),
               decoration: BoxDecoration(
-                color: message.isUser ? Colors.deepOrange[100] : Colors.grey[200],
+                color: message.isUser
+                    ? Colors.deepOrange[100]
+                    : Colors.grey[200],
                 borderRadius: BorderRadius.circular(12.0),
               ),
               child: Column(
@@ -316,77 +652,171 @@ class _ChatScreenState extends State<ChatScreen> {
                   Text(message.text),
                   if (message.restaurants.isNotEmpty)
                     _buildRestaurantList(message.restaurants),
+                  //else if (message.wasSearchRequest)
+                  //  _buildNoRestaurantsFound(),
                 ],
               ),
             ),
           ),
-          if (message.isUser)
-            const CircleAvatar(child: Icon(Icons.person)),
+          if (message.isUser) const CircleAvatar(child: Icon(Icons.person)),
         ],
       ),
     );
   }
 
   Widget _buildRestaurantList(List<RestaurantInfo> restaurants) {
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      height: 320,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: restaurants.length,
-        itemBuilder: (context, index) {
-          final restaurant = restaurants[index];
-          return SizedBox(
-            width: 250,
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: restaurant.photoUrls.isNotEmpty
-                        ? Image.network(
-                            restaurant.photoUrls.first,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image),
-                          )
-                        : Container(color: Colors.grey[300], child: const Icon(Icons.camera_alt)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
+    // Count open and closed restaurants for display
+    final openCount = restaurants.where((r) => r.isOpenNow).length;
+    final closedCount = restaurants.length - openCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (restaurants.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 10, bottom: 8),
+            child: Text(
+              '${restaurants.length} restaurants found${openCount > 0 ? ' • $openCount open now' : ''}${closedCount > 0 ? ' • $closedCount closed' : ''}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        Container(
+          margin: const EdgeInsets.only(top: 0),
+          height: 320,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: restaurants.length,
+            itemBuilder: (context, index) {
+              final restaurant = restaurants[index];
+              return SizedBox(
+                width: 250,
+                child: GestureDetector(
+                  onTap: () => _openInGoogleMaps(restaurant),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(restaurant.address, style: Theme.of(context).textTheme.bodySmall),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(Icons.star, color: Colors.amber, size: 16),
-                            Text(' ${restaurant.rating}'),
-                            const SizedBox(width: 8),
-                            Text(
-                              restaurant.isOpenNow ? 'OPEN' : 'CLOSED',
-                              style: TextStyle(
-                                color: restaurant.isOpenNow ? Colors.green : Colors.red,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                        SizedBox(
+                          height: 120,
+                          width: double.infinity,
+                          child: restaurant.photoUrls.isNotEmpty
+                              ? Image.network(
+                                  restaurant.photoUrls.first,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.broken_image),
+                                )
+                              : Container(
+                                  color: Colors.grey[300],
+                                  child: const Icon(Icons.camera_alt),
+                                ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(restaurant.summary, maxLines: 3, overflow: TextOverflow.ellipsis),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                restaurant.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _compactAddress(
+                                        restaurant.address,
+                                        maxLength: 70,
+                                      ),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.map,
+                                    size: 16,
+                                    color: Colors.blue,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    color: Colors.amber,
+                                    size: 16,
+                                  ),
+                                  Text(' ${restaurant.rating}'),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    restaurant.isOpenNow
+                                        ? 'OPEN'
+                                        : (restaurant.nextOpeningDisplay ??
+                                              'CLOSED'),
+                                    style: TextStyle(
+                                      color: restaurant.isOpenNow
+                                          ? Colors.green
+                                          : Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                restaurant.summary,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoRestaurantsFound() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.search_off, size: 48, color: Colors.orange),
+          const SizedBox(height: 8),
+          const Text(
+            'No restaurants found',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.orange,
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -418,7 +848,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   decoration: const InputDecoration(
                     hintText: "Message",
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 10.0,
+                    ),
                   ),
                 ),
               ),

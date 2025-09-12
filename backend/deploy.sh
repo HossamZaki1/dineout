@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Google Cloud deployment script for DineOut backend
+# Google Cloud deployment script for DineQuest backend
 set -e
 
 # Configuration
@@ -15,7 +15,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🚀 Starting Google Cloud deployment for DineOut backend...${NC}"
+echo -e "${GREEN}🚀 Starting Google Cloud deployment for DineQuest backend...${NC}"
 
 # Check if PROJECT_ID is set
 if [ -z "$PROJECT_ID" ]; then
