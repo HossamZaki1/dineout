@@ -1,21 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'widgets/auth_wrapper.dart';
 import 'screens/login_screen.dart';
-import 'landing_screen.dart';
+import 'screens/discovery_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    await dotenv.load(fileName: ".env");
-    print("✅ Environment file loaded successfully");
-  } catch (e) {
-    print("⚠️ Could not load .env file: $e");
-    print("Using default configuration...");
-  }
 
   // Initialize Firebase
   try {
@@ -65,6 +56,6 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
-    return const LandingScreen(); // Use your existing landing screen for now
+    return const DiscoveryScreen(); // New discovery screen with sliding dishes
   }
 }

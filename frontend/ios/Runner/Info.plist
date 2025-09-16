@@ -49,5 +49,9 @@
     <string>This app uses speech recognition to allow you to search for restaurants with your voice.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>This app requires microphone access to enable voice search for restaurants.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app needs location access to find restaurants near you.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>This app needs location access to find restaurants near you.</string>
 </dict>
 </plist>
