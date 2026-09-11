@@ -1,0 +1,98 @@
+{
+   "results" : 
+   [
+      {
+         "address_components" : 
+         [
+            {
+               "long_name" : "Kaiserslautern",
+               "short_name" : "KL",
+               "types" : 
+               [
+                  "locality",
+                  "political"
+               ]
+            },
+            {
+               "long_name" : "Kaiserslautern",
+               "short_name" : "KL",
+               "types" : 
+               [
+                  "administrative_area_level_3",
+                  "political"
+               ]
+            },
+            {
+               "long_name" : "Rhineland-Palatinate",
+               "short_name" : "RP",
+               "types" : 
+               [
+                  "administrative_area_level_1",
+                  "political"
+               ]
+            },
+            {
+               "long_name" : "Germany",
+               "short_name" : "DE",
+               "types" : 
+               [
+                  "country",
+                  "political"
+               ]
+            },
+            {
+               "long_name" : "67",
+               "short_name" : "67",
+               "types" : 
+               [
+                  "postal_code",
+                  "postal_code_prefix"
+               ]
+            }
+         ],
+         "formatted_address" : "67 Kaiserslautern, Germany",
+         "geometry" : 
+         {
+            "bounds" : 
+            {
+               "northeast" : 
+               {
+                  "lat" : 49.4951465,
+                  "lng" : 7.8707303
+               },
+               "southwest" : 
+               {
+                  "lat" : 49.3586227,
+                  "lng" : 7.627232199999999
+               }
+            },
+            "location" : 
+            {
+               "lat" : 49.4400657,
+               "lng" : 7.7491265
+            },
+            "location_type" : "APPROXIMATE",
+            "viewport" : 
+            {
+               "northeast" : 
+               {
+                  "lat" : 49.4951465,
+                  "lng" : 7.8707303
+               },
+               "southwest" : 
+               {
+                  "lat" : 49.3586227,
+                  "lng" : 7.627232199999999
+               }
+            }
+         },
+         "place_id" : "ChIJMQ6MFrkSlkcRics3I-WxhqY",
+         "types" : 
+         [
+            "locality",
+            "political"
+         ]
+      }
+   ],
+   "status" : "OK"
+}

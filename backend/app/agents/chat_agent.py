@@ -1,0 +1,135 @@
+"""
+Chat Agent: Understands user's request, identifies intent, and extracts entities.
+"""
+from app.agents.base_agent import BaseAgent
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+from typing import Optional
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ConversationDetails(BaseModel):
+    """Structured data extracted from the user's request."""
+    intent: str = Field(description="The user's intent. Should be 'search_restaurants' or 'location_clarification' or 'cuisine_clarification' or 'other'.")
+    location: Optional[str] = Field(description="The city or area the user wants to search for restaurants in.")
+    cuisine: Optional[str] = Field(description="The type of food the user is interested in (e.g., 'Italian', 'Mexican', 'any').")
+    search_radius: int = Field(default=5000, description="The search radius in meters.")
+    response: str = Field(description="A natural language response to the user.")
+    location_ambiguous: bool = Field(default=False, description="True if the location is too broad or ambiguous.")
+
+class ChatAgent(BaseAgent):
+    """An agent that analyzes user input to determine intent and extract entities."""
+
+    def __init__(self):
+        """Initializes the ChatAgent with a structured LLM."""
+        super().__init__(agent_name="ChatAgent")
+
+    async def _custom_initialize(self):
+        """Custom initialization for ChatAgent."""
+        pass
+
+    async def run(self, user_input: str, history: list | None = None) -> ConversationDetails:
+        """
+        Analyzes the user's input to extract conversation details.
+
+        Args:
+            user_input: The user's message.
+            history: The conversation history.
+
+        Returns:
+            A ConversationDetails object with the extracted information.
+        """
+        # Ensure the agent is initialized
+        if not self.is_initialized or not self.llm:
+            raise RuntimeError("ChatAgent not initialized. Call initialize() first.")
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """
+You are a friendly and helpful assistant for a restaurant suggestion app.
+Your goal is to understand the user's request and extract the necessary information to find restaurants.
+
+Analyze the user's input and respond with a JSON object containing:
+- intent: 'search_restaurants' if ready to search, 'location_clarification' if location is too broad, 'cuisine_clarification' if need cuisine info, 'other' if unrelated
+- location: the city/area mentioned (null if not provided)
+- cuisine: the food type mentioned (null if not specified, 'any' if they want any type)
+- search_radius: 5000 (default)
+- response: a friendly conversational response
+- location_ambiguous: true if location is too broad/vague (countries, regions, generic terms like "city center", "downtown", "north coast")
+
+LOCATION AMBIGUITY RULES:
+- TOO BROAD/AMBIGUOUS: Countries (Germany, USA, Italy), regions (North Coast, East Coast, Southern California), generic areas (City Center, Downtown, Mall Area, Business District)
+- SPECIFIC ENOUGH: Cities (Berlin, San Francisco, Rome), neighborhoods (SoHo NYC, Castro SF), addresses, landmarks (near Golden Gate Bridge)
+
+Examples:
+User: "I want Italian food in San Francisco"
+{{"intent": "search_restaurants", "location": "San Francisco", "cuisine": "Italian", "search_radius": 5000, "response": "Great! I'll help you find Italian restaurants in San Francisco.", "location_ambiguous": false}}
+
+User: "Find restaurants in Germany"
+{{"intent": "location_clarification", "location": "Germany", "cuisine": null, "search_radius": 5000, "response": "Germany is quite large! Could you specify which city or area in Germany you'd like me to search? For example, Berlin, Munich, Hamburg, etc.", "location_ambiguous": true}}
+
+User: "I want pizza in the city center"
+{{"intent": "location_clarification", "location": "city center", "cuisine": "pizza", "search_radius": 5000, "response": "I'd love to help you find pizza! Could you tell me which city center you're referring to? Please specify the city name.", "location_ambiguous": true}}
+
+User: "Find sushi on the North Coast"
+{{"intent": "location_clarification", "location": "North Coast", "cuisine": "sushi", "search_radius": 5000, "response": "The North Coast covers a large area! Could you be more specific about which city or town you're looking for sushi in?", "location_ambiguous": true}}
+
+User: "Find restaurants in NYC"
+{{"intent": "cuisine_clarification", "location": "NYC", "cuisine": null, "search_radius": 5000, "response": "I'd be happy to help you find restaurants in NYC! What type of cuisine are you in the mood for?", "location_ambiguous": false}}
+
+Always respond with valid JSON only, no additional text.
+"""),
+            ("human", "Previous conversation: {history}"),
+            ("human", "User request: {input}"),
+        ])
+
+        chain = prompt | self.llm
+        
+        try:
+            response = await chain.ainvoke({
+                "input": user_input,
+                "history": str(history) if history else "No previous conversation"
+            })
+
+            # Parse the JSON response from the LLM
+            response_text = response.content.strip()
+
+
+            # Try to extract JSON from the response
+            if response_text.startswith('```json'):
+                # Remove markdown code block formatting
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+            elif response_text.startswith('```'):
+                # Remove any code block formatting
+                response_text = response_text.replace('```', '').strip()
+
+            # Find JSON object in the response
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx != -1 and end_idx > start_idx:
+                response_text = response_text[start_idx:end_idx]
+
+            response_data = json.loads(response_text)
+
+
+            # Create ConversationDetails object from parsed JSON
+            return ConversationDetails(
+                intent=response_data.get('intent', 'other'),
+                location=response_data.get('location'),
+                cuisine=response_data.get('cuisine'),
+                search_radius=response_data.get('search_radius', 5000),
+                response=response_data.get('response', 'I can help you find restaurants!'),
+                location_ambiguous=response_data.get('location_ambiguous', False)
+            )
+
+        except (json.JSONDecodeError, KeyError) as e:
+            # Fallback if JSON parsing fails
+            logger.error("Failed to parse the language model response (%s)", type(e).__name__)
+            return ConversationDetails(
+                intent='other',
+                location=None,
+                cuisine=None,
+                search_radius=5000,
+                response="I'm here to help you find restaurants! Could you tell me what kind of food you're looking for and where?"
+            )

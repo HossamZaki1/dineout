@@ -1,0 +1,30 @@
+backend/.venv
+backend/__pycache__/
+backend/*.py[cod]
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/app/agents/__pycache__/
+backend/app/agents/*.py[cod]
+backend/app/__pycache__/*
+.gitignore
+.idea/copilotDiffState.xml
+.idea/libraries/Dart_Packages.xml
+backend/app/models/__pycache__/__init__.cpython-313.pyc
+.gitignore
+frontend/macos/Podfile
+.gitignore
+frontend/macos/Flutter/GeneratedPluginRegistrant.swift
+frontend/windows/flutter/generated_plugin_registrant.cc
+frontend/windows/flutter/generated_plugins.cmake
+
+# backend secrets
+backend/.env
+
+# Python bytecode (pattern, so the IDE stops appending one line per file)
+__pycache__/
+*.py[cod]
+
+# Local OS and emulator output
+.DS_Store
+firebase-debug.log
+firestore-debug.log

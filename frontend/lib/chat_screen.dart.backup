@@ -1,0 +1,589 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:uuid/uuid.dart';
+import 'services/auth_service.dart';
+import 'services/conversation_service.dart';
+import 'services/conversations_api_service.dart';
+import 'models/conversation.dart';
+
+// Data Models
+class Message {
+  final String text;
+  final bool isUser;
+  final List<RestaurantInfo> restaurants;
+
+  Message({required this.text, this.isUser = true, this.restaurants = const []});
+}
+
+class RestaurantInfo {
+  final String name;
+  final String address;
+  final double rating;
+  final bool isOpenNow;
+  final List<String> photoUrls;
+  final String summary;
+
+  RestaurantInfo.fromJson(Map<String, dynamic> json)
+      : name = json['name'],
+        address = json['address'],
+        rating = (json['rating'] as num).toDouble(),
+        isOpenNow = json['is_open_now'],
+        photoUrls = json['photo_url'] != null ? [json['photo_url']] : <String>[],
+        summary = json['summary'];
+}
+
+class ChatScreen extends StatefulWidget {
+  const ChatScreen({super.key, this.sessionId, this.initialTitle});
+
+  final String? sessionId;
+  final String? initialTitle;
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final TextEditingController _textController = TextEditingController();
+  final List<Message> _messages = [];
+  bool _isLoading = false;
+  String? _sessionId;
+  String? _tempUserId; // Add temporary user ID for unauthenticated users
+  final Dio _dio = Dio();
+  final AuthService _authService = AuthService();
+  final ConversationService _conversationService = ConversationService();
+  final ConversationsApiService _conversationsApi = ConversationsApiService();
+  late DateTime _sessionStartedAt;
+
+  // Speech and TTS
+  final SpeechToText _speechToText = SpeechToText();
+  final FlutterTts _flutterTts = FlutterTts();
+  bool _speechEnabled = false;
+  bool _isListening = false;
+
+  // Get the correct API URL based on platform
+  String get apiUrl {
+    String baseUrl = dotenv.env['API_URL'] ?? 'http://10.0.2.2:8080';
+
+    if (kIsWeb) {
+      // For web, use localhost
+      return 'http://localhost:8080';
+    } else if (Platform.isAndroid) {
+      // For Android emulator, use 10.0.2.2 to reach host machine
+      return 'http://10.0.2.2:8080';
+    } else if (Platform.isIOS) {
+      // For iOS simulator, localhost works
+      return 'http://localhost:8080';
+    } else {
+      // Fallback to environment variable or default
+      return baseUrl;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initSpeech();
+    _sessionId = widget.sessionId ?? const Uuid().v4();
+    _tempUserId = _authService.currentUser?.uid ?? 'temp_${_sessionId}'; // Generate temp user ID if not authenticated
+    _sessionStartedAt = DateTime.now(); // Initialize session start time
+
+    if (widget.sessionId != null) {
+      // Loading existing conversation
+      _loadConversationHistory();
+    } else {
+      // New conversation
+      _addInitialMessage();
+    }
+
+    // Debug environment variables and platform-specific URL
+    developer.log('🔧 Environment check:');
+    developer.log('API_URL from .env: ${dotenv.env['API_URL']}');
+    developer.log('Platform-specific API URL: $apiUrl');
+
+    if (kDebugMode) {
+      debugPrint('🌐 Using API URL: $apiUrl');
+      debugPrint('🔍 Platform: ${kIsWeb ? 'Web' : Platform.operatingSystem}');
+    }
+  }
+
+  void _initSpeech() async {
+    _speechEnabled = await _speechToText.initialize();
+    setState(() {});
+  }
+
+  void _addInitialMessage() {
+    const initialMessage = "Hi! I can help you find a great place to eat. Where are you looking for restaurants?";
+    setState(() {
+      _messages.insert(0, Message(text: initialMessage, isUser: false));
+    });
+    _speak(initialMessage);
+  }
+
+  Future<void> _speak(String text) async {
+    await _flutterTts.speak(text);
+  }
+
+  Future<void> _startListening() async {
+    if (!_speechEnabled) return;
+    await _stopListening(); // Ensure it's stopped before starting
+    await _flutterTts.stop();
+    setState(() => _isListening = true);
+    await _speechToText.listen(
+      onResult: _onSpeechResult,
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+    );
+  }
+
+  Future<void> _stopListening() async {
+    if (!_isListening) return;
+    await _speechToText.stop();
+    setState(() => _isListening = false);
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      _textController.text = result.recognizedWords;
+    });
+    if (result.finalResult) {
+      _handleSubmitted(result.recognizedWords);
+    }
+  }
+
+  Future<void> _handleSubmitted(String text) async {
+    if (text.trim().isEmpty) return;
+
+    _textController.clear();
+    _stopListening();
+
+    setState(() {
+      _messages.insert(0, Message(text: text));
+      _isLoading = true;
+    });
+
+    // Save user message to local storage as backup
+    final userMessage = ConversationMessage(
+      role: 'user',
+      content: text,
+      timestamp: DateTime.now(),
+    );
+    try {
+      await _conversationService.addMessageToConversation(_sessionId!, userMessage, userId: _tempUserId);
+    } catch (e) {
+      developer.log('⚠️ Failed saving user message locally: $e');
+    }
+
+    try {
+      final history = _messages
+          .where((m) => m.text.isNotEmpty)
+          .take(10) // Limit history size
+          .map((m) => {"role": m.isUser ? "user" : "assistant", "content": m.text})
+          .toList()
+          .reversed
+          .toList();
+
+      // Multiple debug output methods to ensure visibility in Android Studio
+      developer.log('🚀 Sending API request to: $apiUrl/chat');
+      print('📤 Request data: ${{
+        'user_input': text,
+        'session_id': _sessionId,
+        'history': history,
+      }}');
+
+      if (kDebugMode) {
+        debugPrint('🔍 Debug: Making API call with user input: $text');
+      }
+
+      final response = await _dio.post(
+        '$apiUrl/chat',
+        data: {
+          'user_input': text,
+          'session_id': _sessionId,
+          'history': history,
+          'user_id': _tempUserId,
+        },
+      );
+
+      // Multiple debug output methods for response
+      developer.log('✅ API Response received', name: 'ChatScreen');
+      print('📥 Response data: ${response.data}');
+
+      if (kDebugMode) {
+        debugPrint('🎯 Response status: ${response.statusCode}');
+        debugPrint('📊 Response body: ${response.data}');
+      }
+
+      final data = response.data;
+      final botResponse = data['response'];
+      final List<RestaurantInfo> restaurants = (data['suggestions'] as List?)
+          ?.map((r) => RestaurantInfo.fromJson(r))
+          .toList() ?? [];
+
+      developer.log('🍽️ Found ${restaurants.length} restaurants');
+
+      setState(() {
+        _messages.insert(0, Message(text: botResponse, isUser: false, restaurants: restaurants));
+      });
+      _speak(botResponse);
+
+      // Save assistant message to local storage as backup
+      final assistantMessage = ConversationMessage(
+        role: 'assistant',
+        content: botResponse,
+        timestamp: DateTime.now(),
+        restaurantSuggestions: restaurants.isNotEmpty 
+            ? restaurants.map((r) => {
+                'name': r.name,
+                'address': r.address,
+                'rating': r.rating,
+                'is_open_now': r.isOpenNow,
+                'photo_url': r.photoUrls.isNotEmpty ? r.photoUrls.first : null,
+                'summary': r.summary,
+              }).toList()
+            : null,
+      );
+      try {
+        await _conversationService.addMessageToConversation(_sessionId!, assistantMessage, userId: _tempUserId);
+      } catch (e) {
+        developer.log('⚠️ Failed saving assistant message locally: $e');
+      }
+
+      // Save/update conversation metadata with assistant preview
+      await _saveConversationMeta(preview: botResponse);
+
+    } catch (e) {
+      developer.log('❌ API Error: $e', name: 'ChatScreen', error: e);
+      print('🚨 Error during API call: $e');
+
+      if (kDebugMode) {
+        debugPrint('💥 Exception details: $e');
+      }
+
+      final errorMessage = "Sorry, I'm having trouble connecting. Please try again later.";
+      setState(() {
+        _messages.insert(0, Message(text: errorMessage, isUser: false));
+      });
+      _speak(errorMessage);
+
+      // Save error message to local storage as backup
+      final errorMessageObj = ConversationMessage(
+        role: 'assistant',
+        content: errorMessage,
+        timestamp: DateTime.now(),
+      );
+      try {
+        await _conversationService.addMessageToConversation(_sessionId!, errorMessageObj, userId: _tempUserId);
+      } catch (e) {
+        developer.log('⚠️ Failed saving error message locally: $e');
+      }
+
+      // Save/update conversation metadata with error preview
+      await _saveConversationMeta(preview: errorMessage);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _saveConversationMeta({required String preview}) async {
+    try {
+      final title = _deriveTitle() ?? widget.initialTitle ?? 'New Search';
+      
+      // Create a preview that includes the latest user-assistant exchange
+      String enhancedPreview = preview;
+      if (_messages.length >= 2) {
+        final latestAssistant = _messages.firstWhere((m) => !m.isUser, orElse: () => Message(text: preview, isUser: false));
+        final latestUser = _messages.firstWhere((m) => m.isUser, orElse: () => Message(text: '', isUser: true));
+        
+        if (latestUser.text.isNotEmpty) {
+          final userPreview = latestUser.text.length > 30 ? '${latestUser.text.substring(0, 30)}...' : latestUser.text;
+          final assistantPreview = latestAssistant.text.length > 50 ? '${latestAssistant.text.substring(0, 50)}...' : latestAssistant.text;
+          enhancedPreview = 'You: $userPreview\nAI: $assistantPreview';
+        }
+      }
+      
+      final meta = ConversationMeta(
+        id: _sessionId!,
+        title: title,
+        createdAt: _sessionStartedAt,
+        updatedAt: DateTime.now(),
+        lastMessagePreview: enhancedPreview,
+      );
+      await _conversationService.upsertConversation(meta, userId: _tempUserId);
+    } catch (e) {
+      developer.log('⚠️ Failed saving conversation meta: $e');
+    }
+  }
+
+  String? _deriveTitle() {
+    try {
+      final earliestUser = _messages.reversed.firstWhere((m) => m.isUser, orElse: () => Message(text: '', isUser: true));
+      final raw = earliestUser.text.trim();
+      if (raw.isEmpty) return null;
+      return raw.length <= 50 ? raw : raw.substring(0, 50) + '…';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _loadConversationHistory() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      // Try to load from backend API first
+      try {
+        final messages = await _conversationsApi.getConversationMessages(_tempUserId!, _sessionId!);
+          if (messages.isNotEmpty) {
+            setState(() {
+              _messages.clear();
+              _messages.addAll(messages.reversed.map((m) {
+                // Convert restaurant suggestions to RestaurantInfo objects
+                List<RestaurantInfo> restaurants = [];
+                if (m.restaurantSuggestions != null && m.restaurantSuggestions!.isNotEmpty) {
+                  restaurants = m.restaurantSuggestions!.map((r) => RestaurantInfo.fromJson(r)).toList();
+                }
+                
+                return Message(
+                  text: m.content, 
+                  isUser: m.role == 'user',
+                  restaurants: restaurants,
+                );
+              }));
+            });
+            // Speak the last assistant message
+            final lastAssistantMessage = messages.lastWhere((m) => m.role == 'assistant', orElse: () => ConversationMessage(role: 'assistant', content: '', timestamp: DateTime.now()));
+            if (lastAssistantMessage.content.isNotEmpty) {
+              _speak(lastAssistantMessage.content);
+            }
+            return;
+          }
+        } catch (apiError) {
+          developer.log('⚠️ Failed loading from API, trying local storage: $apiError');
+        }
+      }
+      
+      // Fallback to local storage
+      final meta = await _conversationService.getConversationMeta(_sessionId, userId: _tempUserId);
+      if (meta != null) {
+        final history = await _conversationService.getConversationHistory(_sessionId, userId: _tempUserId);
+        if (history != null && history.isNotEmpty) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(history.reversed.map((m) {
+              // Convert restaurant suggestions to RestaurantInfo objects
+              List<RestaurantInfo> restaurants = [];
+              if (m.restaurantSuggestions != null && m.restaurantSuggestions!.isNotEmpty) {
+                restaurants = m.restaurantSuggestions!.map((r) => RestaurantInfo.fromJson(r)).toList();
+              }
+              
+              return Message(
+                text: m.content, 
+                isUser: m.role == 'user',
+                restaurants: restaurants,
+              );
+            }));
+          });
+          final lastAssistantMessage = history.lastWhere((m) => m.role == 'assistant', orElse: () => ConversationMessage(role: 'assistant', content: '', timestamp: DateTime.now()));
+          if (lastAssistantMessage.content.isNotEmpty) {
+            _speak(lastAssistantMessage.content);
+          }
+        } else {
+          setState(() {
+            _messages.clear();
+            _messages.add(Message(text: meta.lastMessagePreview, isUser: false));
+          });
+          _speak(meta.lastMessagePreview);
+        }
+      }
+    } catch (e) {
+      developer.log('⚠️ Failed loading conversation history: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Restaurant Finder AI'),
+        elevation: 2,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              reverse: true,
+              padding: const EdgeInsets.all(8.0),
+              itemCount: _messages.length,
+              itemBuilder: (_, int index) => _buildMessageItem(_messages[index]),
+            ),
+          ),
+          if (_isLoading) const LinearProgressIndicator(),
+          const Divider(height: 1.0),
+          // Use SafeArea to ensure content is not hidden by system UI
+          SafeArea(
+            minimum: const EdgeInsets.only(bottom: 8.0),
+            child: _buildTextComposer(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageItem(Message message) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 10.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          if (!message.isUser)
+            const CircleAvatar(child: Icon(Icons.restaurant_menu)),
+          Flexible(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8.0),
+              padding: const EdgeInsets.all(12.0),
+              decoration: BoxDecoration(
+                color: message.isUser ? Colors.deepOrange[100] : Colors.grey[200],
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(message.text),
+                  if (message.restaurants.isNotEmpty)
+                    _buildRestaurantList(message.restaurants),
+                ],
+              ),
+            ),
+          ),
+          if (message.isUser)
+            const CircleAvatar(child: Icon(Icons.person)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestaurantList(List<RestaurantInfo> restaurants) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      height: 320,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: restaurants.length,
+        itemBuilder: (context, index) {
+          final restaurant = restaurants[index];
+          return SizedBox(
+            width: 250,
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 120,
+                    width: double.infinity,
+                    child: restaurant.photoUrls.isNotEmpty
+                        ? Image.network(
+                            restaurant.photoUrls.first,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image),
+                          )
+                        : Container(color: Colors.grey[300], child: const Icon(Icons.camera_alt)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(restaurant.address, style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.star, color: Colors.amber, size: 16),
+                            Text(' ${restaurant.rating}'),
+                            const SizedBox(width: 8),
+                            Text(
+                              restaurant.isOpenNow ? 'OPEN' : 'CLOSED',
+                              style: TextStyle(
+                                color: restaurant.isOpenNow ? Colors.green : Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(restaurant.summary, maxLines: 3, overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTextComposer() {
+    return IconTheme(
+      data: IconThemeData(color: Theme.of(context).colorScheme.primary),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(25.0),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Container(
+                constraints: const BoxConstraints(
+                  minHeight: 40.0,
+                  maxHeight: 120.0,
+                ),
+                child: TextField(
+                  controller: _textController,
+                  onSubmitted: _handleSubmitted,
+                  maxLines: null,
+                  minLines: 1,
+                  textInputAction: TextInputAction.newline,
+                  decoration: const InputDecoration(
+                    hintText: "Message",
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: Icon(_isListening ? Icons.mic_off : Icons.mic),
+              onPressed: _isListening ? _stopListening : _startListening,
+            ),
+            IconButton(
+              icon: const Icon(Icons.send),
+              onPressed: () => _handleSubmitted(_textController.text),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

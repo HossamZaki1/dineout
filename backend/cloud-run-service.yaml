@@ -1,0 +1,47 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: dineout-backend
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        autoscaling.knative.dev/maxScale: "10"
+    spec:
+      serviceAccountName: dineout-runtime@PROJECT_ID.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+      - image: REGION-docker.pkg.dev/PROJECT_ID/dineout/dineout-backend:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: google-api-key
+              key: latest
+        - name: GOOGLE_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: google-maps-api-key
+              key: latest
+        - name: FIREBASE_PROJECT_ID
+          value: "FIREBASE_PROJECT_ID"
+        - name: FIRESTORE_PROJECT_ID
+          value: "FIRESTORE_PROJECT_ID"
+        # Comma-separated browser origins. Empty is correct for mobile-only,
+        # which sends no Origin header; set it before serving the web build.
+        - name: ALLOWED_ORIGINS
+          value: ""
+        - name: HOST
+          value: "0.0.0.0"
+        - name: STORAGE_BACKEND
+          value: "firestore"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
